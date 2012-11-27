@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hsoj/asn1-ber"
+    "bytes"
 )
 
 const (
@@ -212,11 +213,18 @@ func compileFilter(filter string, pos int) (p *ber.Packet, new_pos int, err *Err
 			err = NewError(ErrorFilterCompile, errors.New("Error parsing filter"))
 			return
 		}
-		p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, attribute, "Attribute"))
-		switch {
+        // Present filter doesn't have a child.
+        if !(p.Tag == FilterEqualityMatch && condition == "*") {
+            p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, attribute, "Attribute"))
+		}
+        switch {
 		case p.Tag == FilterEqualityMatch && condition == "*":
 			p.Tag = FilterPresent
 			p.Description = FilterMap[uint64(p.Tag)]
+            p.Value = attribute
+            p.Data = bytes.NewBuffer( []byte(attribute) )
+            p.TagType = ber.TypePrimative
+            p.ClassType = ber.ClassContext
 		case p.Tag == FilterEqualityMatch && condition[0] == '*' && condition[len(condition)-1] == '*':
 			// Any
 			p.Tag = FilterSubstrings
