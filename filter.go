@@ -3,13 +3,59 @@
 // license that can be found in the LICENSE file.
 
 // File contains a filter compiler/decompiler
+/*
+An LDAP search filter is defined in Section 4.5.1 of [RFC4511]
+        Filter ::= CHOICE {
+            and                [0] SET SIZE (1..MAX) OF filter Filter,
+            or                 [1] SET SIZE (1..MAX) OF filter Filter,
+            not                [2] Filter,
+            equalityMatch      [3] AttributeValueAssertion,
+            substrings         [4] SubstringFilter,
+            greaterOrEqual     [5] AttributeValueAssertion,
+            lessOrEqual        [6] AttributeValueAssertion,
+            present            [7] AttributeDescription,
+            approxMatch        [8] AttributeValueAssertion,
+            extensibleMatch    [9] MatchingRuleAssertion }
+
+        SubstringFilter ::= SEQUENCE {
+            type    AttributeDescription,
+            -- initial and final can occur at most once
+            substrings    SEQUENCE SIZE (1..MAX) OF substring CHOICE {
+             initial        [0] AssertionValue,
+             any            [1] AssertionValue,
+             final          [2] AssertionValue } }
+
+        AttributeValueAssertion ::= SEQUENCE {
+            attributeDesc   AttributeDescription,
+            assertionValue  AssertionValue }
+
+        MatchingRuleAssertion ::= SEQUENCE {
+            matchingRule    [1] MatchingRuleId OPTIONAL,
+            type            [2] AttributeDescription OPTIONAL,
+            matchValue      [3] AssertionValue,
+            dnAttributes    [4] BOOLEAN DEFAULT FALSE }
+
+        AttributeDescription ::= LDAPString
+                        -- Constrained to <attributedescription>
+                        -- [RFC4512]
+
+        AttributeValue ::= OCTET STRING
+
+        MatchingRuleId ::= LDAPString
+
+        AssertionValue ::= OCTET STRING
+
+        LDAPString ::= OCTET STRING -- UTF-8 encoded,
+                                    -- [Unicode] characters
+*/
 package ldap
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/hsoj/asn1-ber"
-    "bytes"
+	"regexp"
 )
 
 const (
@@ -50,18 +96,306 @@ var FilterSubstringsMap = map[uint64]string{
 	FilterSubstringsFinal:   "Substrings Final",
 }
 
+const (
+	TagMatchingRule      = 1
+	TagMatchingType      = 2
+	TagMatchValue        = 3
+	TagMatchDnAttributes = 4
+)
+
+const (
+	FilterItem = 256
+)
+
+var FilterComponent = map[string]uint64{
+	"&":  FilterAnd,
+	"|":  FilterOr,
+	"!":  FilterNot,
+	"=":  FilterEqualityMatch,
+	">=": FilterGreaterOrEqual,
+	"<=": FilterLessOrEqual,
+	"~=": FilterApproxMatch,
+}
+
+var opRegex *regexp.Regexp
+var endRegex *regexp.Regexp
+var itemRegex *regexp.Regexp
+var unescapedWildCardRegex *regexp.Regexp
+var wildCardSearchRegex *regexp.Regexp
+
+var FilterDebug bool = false
+
+func init() {
+	opRegex = regexp.MustCompile(`^\(\s*([&!|])\s*`)
+	endRegex = regexp.MustCompile(`^\)\s*`)
+	itemRegex = regexp.MustCompile(
+		`^\(\s*([-;.:\d\w]*[-;\d\w])\s*([:~<>]?=)((?:\\.|[^\\()]+)*)\)\s*`)
+	unescapedWildCardRegex = regexp.MustCompile(`^(\\.|[^\\*]+)*\*`)
+	wildCardSearchRegex = regexp.MustCompile(`^((\\.|[^\\*]+)*)\*`)
+}
+
 func CompileFilter(filter string) (*ber.Packet, *Error) {
-	if len(filter) == 0 || filter[0] != '(' {
-		return nil, NewError(ErrorFilterCompile, errors.New("Filter does not start with an '('"))
+	if len(filter) == 0 {
+		return nil, NewError(ErrorFilterCompile, errors.New("Filter of zero length"))
 	}
-	packet, pos, err := compileFilter(filter, 1)
-	if err != nil {
-		return nil, err
+	if filter[0] != '(' {
+		return nil, NewError(ErrorFilterCompile, errors.New("Filter does not start with '('"))
 	}
-	if pos != len(filter) {
-		return nil, NewError(ErrorFilterCompile, errors.New("Finished compiling filter with extra at end.\n"+fmt.Sprint(filter[pos:])))
+	return parse(filter)
+}
+
+func parse(filter string) (*ber.Packet, *Error) {
+	var err *Error
+	var pTmp1 *ber.Packet
+	pos := 0
+	bracketCount := 0
+
+	p := make([]*ber.Packet, 0, 5)
+
+	// Simple non recursive method to create ber packets.
+	// If its an Op "&|!" then push onto the stack
+	// If its am filter expression (item) then add as a child
+	// if its an ending ) pop the stack adding as child to above.
+	// plus special cases of course.
+
+	for {
+		if matches := opRegex.FindStringSubmatch(filter[pos:]); len(matches) != 0 {
+			pos += len(matches[0])
+			pTmp1, err = encode(FilterComponent[matches[1]], nil)
+			if err != nil {
+				return nil, err
+			}
+			p = append(p, pTmp1)
+			bracketCount++
+			continue
+		} else if matches := endRegex.FindStringSubmatch(filter[pos:]); len(matches) != 0 {
+			if bracketCount <= 0 {
+				return nil, NewError(ErrorFilterCompile,
+					errors.New("Finished compiling filter with extra at end :"+
+						fmt.Sprint(filter[pos:])))
+			}
+			bracketCount--
+			pos += len(matches[0])
+			pTmp1 = p[len(p)-1] // copy last *ber (sequence of values)
+			if len(p) > 1 {     // not root of "tree"
+				p[len(p)-2].AppendChild(pTmp1) // add as child to previous op
+				p = p[:len(p)-1]               // pop stack
+			}
+			continue
+		} else if matches := itemRegex.FindStringSubmatch(filter[pos:]); len(matches) != 0 {
+			pos += len(matches[0])
+			pTmp1, err = encode(FilterItem, matches[1:4])
+			if err != nil {
+				return nil, err
+			}
+			if len(p) == 0 { // case (attr=yyyy)
+				p = append(p, pTmp1)
+			} else {
+				p[len(p)-1].AppendChild(pTmp1)
+			}
+			continue
+		}
+		break
 	}
-	return packet, nil
+	//if len(p) > 0 {
+	//	ber.PrintPacket(p[0])
+	//}
+	if len(filter[pos:]) > 0 {
+		return nil, NewError(ErrorFilterCompile, errors.New(filter+" : Error compiling filter, invalid filter : "+fmt.Sprint(filter[pos:])))
+	}
+	return p[0], nil
+}
+
+func encode(opType uint64, value []string) (*ber.Packet, *Error) {
+	var p *ber.Packet = nil
+	var err *Error
+
+	switch opType {
+	case FilterAnd:
+		if FilterDebug {
+			fmt.Println("FilterAnd")
+		}
+		p = ber.Encode(ber.ClassContext, ber.TypeConstructed, FilterAnd, nil, FilterMap[FilterAnd])
+	case FilterOr:
+		if FilterDebug {
+			fmt.Println("FilterOr")
+		}
+		p = ber.Encode(ber.ClassContext, ber.TypeConstructed, FilterOr, nil, FilterMap[FilterOr])
+	case FilterNot:
+		if FilterDebug {
+			fmt.Println("FilterNot")
+		}
+		p = ber.Encode(ber.ClassContext, ber.TypeConstructed, FilterNot, nil, FilterMap[FilterNot])
+	case FilterItem:
+		if FilterDebug {
+			fmt.Println("FilterItem")
+		}
+		p, err = encodeItem(value)
+	}
+	return p, err
+}
+
+func encodeItem(attrOpVal []string) (*ber.Packet, *Error) {
+	attr, op, val := attrOpVal[0], attrOpVal[1], attrOpVal[2]
+	if FilterDebug {
+		fmt.Println(attr, op, val)
+	}
+
+	if op == ":=" {
+		return encodeExtensibleMatch(attr, val)
+	}
+
+	if op == "=" {
+		if val == "*" { // simple present
+			p := ber.NewString(ber.ClassContext, ber.TypePrimative, FilterPresent, attr, FilterMap[FilterPresent])
+			return p, nil
+		} else if unescapedWildCardRegex.Match([]byte(val)) {
+			// TODO ADD escaping.
+			return EncodeSubStringMatch(attr, val)
+		}
+	}
+
+	// AttributeValueAssertion seq of the ritght op.
+	p := ber.Encode(ber.ClassContext, ber.TypeConstructed,
+		uint8(FilterComponent[op]), nil, FilterMap[FilterComponent[op]])
+	p.AppendChild(
+		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
+			ber.TagOctetString, attr, "Attribute"))
+	p.AppendChild(
+		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
+			ber.TagOctetString, val, "Value"))
+
+	return p, nil
+}
+
+/*
+substrings         [4] SubstringFilter,
+
+SubstringFilter ::= SEQUENCE {
+            type    AttributeDescription,
+            -- initial and final can occur at most once
+            substrings    SEQUENCE SIZE (1..MAX) OF substring CHOICE {
+             initial        [0] AssertionValue,
+             any            [1] AssertionValue,
+             final          [2] AssertionValue } }
+*/
+
+func EncodeSubStringMatch(attr, value string) (*ber.Packet, *Error) {
+	p := ber.Encode(ber.ClassContext, ber.TypeConstructed,
+		FilterSubstrings, nil, FilterMap[FilterSubstrings])
+	p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, attr, "type"))
+	seq := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "substrings")
+
+	pos := 0
+
+	for {
+		matches := wildCardSearchRegex.FindStringSubmatch(value[pos:])
+		if FilterDebug {
+			fmt.Println(matches)
+		}
+
+		// not match found return error
+
+		if matches == nil && pos == 0 {
+			if FilterDebug {
+				fmt.Println("Did not match filter")
+			}
+			return nil, NewError(ErrorFilterCompile,
+				errors.New("Did not match filter."))
+		}
+		// attr=*XXX
+		if len(matches) == 0 {
+			break
+		}
+		// initial
+		if pos == 0 && len(matches[1]) > 0 {
+			if FilterDebug {
+				fmt.Println("initial : " + matches[1])
+			}
+			seq.AppendChild(ber.NewString(ber.ClassContext, ber.TypePrimative, FilterSubstringsInitial, matches[1], "initial"))
+		}
+		// past initial but not end
+		if pos > 0 && len(matches) > 1 && len(matches[1]) > 0 {
+			if FilterDebug {
+				fmt.Println("any : " + matches[1])
+			}
+			seq.AppendChild(ber.NewString(ber.ClassContext, ber.TypePrimative, FilterSubstringsAny, matches[1], "any"))
+		}
+
+		pos += len(matches[0])
+		if pos == len(value) {
+			break
+		}
+	}
+	if len(value[pos:]) > 0 {
+		if FilterDebug {
+			fmt.Println("final : " + value[pos:])
+		}
+		seq.AppendChild(ber.NewString(ber.ClassContext, ber.TypePrimative, FilterSubstringsFinal, value[pos:], "final"))
+	}
+	p.AppendChild(seq)
+	if FilterDebug {
+		fmt.Println(hex.Dump(p.Bytes()))
+	}
+	return p, nil
+}
+
+/*
+extensibleMatch    [9] MatchingRuleAssertion
+
+MatchingRuleAssertion ::= SEQUENCE {
+            matchingRule    [1] MatchingRuleId OPTIONAL,
+            type            [2] AttributeDescription OPTIONAL,
+            matchValue      [3] AssertionValue,
+            dnAttributes    [4] BOOLEAN DEFAULT FALSE }
+*/
+
+func encodeExtensibleMatch(attr, value string) (*ber.Packet, *Error) {
+	//TODO make cacheable
+	extenseRegex := regexp.MustCompile(`^([-;\d\w]*)(:dn)?(:(\w+|[.\d]+))?$`)
+	p := ber.Encode(ber.ClassContext, ber.TypeConstructed,
+		FilterExtensibleMatch, nil, FilterMap[FilterExtensibleMatch])
+	if matches := extenseRegex.FindStringSubmatch(attr); len(matches) != 0 {
+		if FilterDebug {
+			fmt.Println(matches)
+		}
+		rtype := matches[1]
+		dn := matches[2]
+		rule := matches[4]
+
+		if len(rule) > 0 {
+			prule := ber.NewString(ber.ClassContext, ber.TypePrimative, TagMatchingRule, rule, "matchingRule")
+			p.AppendChild(prule)
+		}
+		if len(rtype) > 0 {
+			ptype := ber.NewString(ber.ClassContext, ber.TypePrimative, TagMatchingType, rtype, "type")
+			p.AppendChild(ptype)
+		}
+		// write an unescape
+		pval := ber.NewString(ber.ClassContext, ber.TypePrimative, TagMatchValue, value, "matchValue")
+		p.AppendChild(pval)
+		if len(dn) > 0 {
+			pdn := ber.NewBoolean(ber.ClassContext, ber.TypePrimative, TagMatchDnAttributes, true, "dnAttributes")
+			p.AppendChild(pdn)
+		}
+	} else {
+		return nil, NewError(ErrorFilterCompile,
+			errors.New("Invalid Extensible attr : "+attr))
+	}
+	if FilterDebug {
+		fmt.Println(hex.Dump(p.Bytes()))
+	}
+	return p, nil
+}
+
+// TODO: Really unescape
+func unescape(raw string) string {
+	return raw
+}
+
+// TODO: Really escape
+func escape(raw string) string {
+	return raw
 }
 
 func DecompileFilter(packet *ber.Packet) (ret string, err *Error) {
@@ -134,124 +468,5 @@ func DecompileFilter(packet *ber.Packet) (ret string, err *Error) {
 	}
 
 	ret += ")"
-	return
-}
-
-func compileFilterSet(filter string, pos int, parent *ber.Packet) (int, *Error) {
-	for pos < len(filter) && filter[pos] == '(' {
-		child, new_pos, err := compileFilter(filter, pos+1)
-		if err != nil {
-			return pos, err
-		}
-		pos = new_pos
-		parent.AppendChild(child)
-	}
-	if pos == len(filter) {
-		return pos, NewError(ErrorFilterCompile, errors.New("Unexpected end of filter"))
-	}
-
-	return pos + 1, nil
-}
-
-func compileFilter(filter string, pos int) (p *ber.Packet, new_pos int, err *Error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = NewError(ErrorFilterCompile, errors.New("Error compiling filter"))
-		}
-	}()
-	p = nil
-	new_pos = pos
-	err = nil
-
-	switch filter[pos] {
-	case '(':
-		p, new_pos, err = compileFilter(filter, pos+1)
-		new_pos++
-		return
-	case '&':
-		p = ber.Encode(ber.ClassContext, ber.TypeConstructed, FilterAnd, nil, FilterMap[FilterAnd])
-		new_pos, err = compileFilterSet(filter, pos+1, p)
-		return
-	case '|':
-		p = ber.Encode(ber.ClassContext, ber.TypeConstructed, FilterOr, nil, FilterMap[FilterOr])
-		new_pos, err = compileFilterSet(filter, pos+1, p)
-		return
-	case '!':
-		p = ber.Encode(ber.ClassContext, ber.TypeConstructed, FilterNot, nil, FilterMap[FilterNot])
-		var child *ber.Packet
-		child, new_pos, err = compileFilter(filter, pos+1)
-		p.AppendChild(child)
-		return
-	default:
-		attribute := ""
-		condition := ""
-		for new_pos < len(filter) && filter[new_pos] != ')' {
-			switch {
-			case p != nil:
-				condition += fmt.Sprintf("%c", filter[new_pos])
-			case filter[new_pos] == '=':
-				p = ber.Encode(ber.ClassContext, ber.TypeConstructed, FilterEqualityMatch, nil, FilterMap[FilterEqualityMatch])
-			case filter[new_pos] == '>' && filter[new_pos+1] == '=':
-				p = ber.Encode(ber.ClassContext, ber.TypeConstructed, FilterGreaterOrEqual, nil, FilterMap[FilterGreaterOrEqual])
-				new_pos++
-			case filter[new_pos] == '<' && filter[new_pos+1] == '=':
-				p = ber.Encode(ber.ClassContext, ber.TypeConstructed, FilterLessOrEqual, nil, FilterMap[FilterLessOrEqual])
-				new_pos++
-			case filter[new_pos] == '~' && filter[new_pos+1] == '=':
-				p = ber.Encode(ber.ClassContext, ber.TypeConstructed, FilterApproxMatch, nil, FilterMap[FilterLessOrEqual])
-				new_pos++
-			case p == nil:
-				attribute += fmt.Sprintf("%c", filter[new_pos])
-			}
-			new_pos++
-		}
-		if new_pos == len(filter) {
-			err = NewError(ErrorFilterCompile, errors.New("Unexpected end of filter"))
-			return
-		}
-		if p == nil {
-			err = NewError(ErrorFilterCompile, errors.New("Error parsing filter"))
-			return
-		}
-        // Present filter doesn't have a child.
-        if !(p.Tag == FilterEqualityMatch && condition == "*") {
-            p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, attribute, "Attribute"))
-		}
-        switch {
-		case p.Tag == FilterEqualityMatch && condition == "*":
-			p.Tag = FilterPresent
-			p.Description = FilterMap[uint64(p.Tag)]
-            p.Value = attribute
-            p.Data = bytes.NewBuffer( []byte(attribute) )
-            p.TagType = ber.TypePrimative
-            p.ClassType = ber.ClassContext
-		case p.Tag == FilterEqualityMatch && condition[0] == '*' && condition[len(condition)-1] == '*':
-			// Any
-			p.Tag = FilterSubstrings
-			p.Description = FilterMap[uint64(p.Tag)]
-			seq := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "Substrings")
-			seq.AppendChild(ber.NewString(ber.ClassContext, ber.TypePrimative, FilterSubstringsAny, condition[1:len(condition)-1], "Any Substring"))
-			p.AppendChild(seq)
-		case p.Tag == FilterEqualityMatch && condition[0] == '*':
-			// Final
-			p.Tag = FilterSubstrings
-			p.Description = FilterMap[uint64(p.Tag)]
-			seq := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "Substrings")
-			seq.AppendChild(ber.NewString(ber.ClassContext, ber.TypePrimative, FilterSubstringsFinal, condition[1:], "Final Substring"))
-			p.AppendChild(seq)
-		case p.Tag == FilterEqualityMatch && condition[len(condition)-1] == '*':
-			// Initial
-			p.Tag = FilterSubstrings
-			p.Description = FilterMap[uint64(p.Tag)]
-			seq := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "Substrings")
-			seq.AppendChild(ber.NewString(ber.ClassContext, ber.TypePrimative, FilterSubstringsInitial, condition[:len(condition)-1], "Initial Substring"))
-			p.AppendChild(seq)
-		default:
-			p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, condition, "Condition"))
-		}
-		new_pos++
-		return
-	}
-	err = NewError(ErrorFilterCompile, errors.New("Reached end of filter without closing parens"))
 	return
 }
