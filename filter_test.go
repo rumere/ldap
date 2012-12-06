@@ -3,6 +3,9 @@ package ldap
 import (
 	"github.com/hsoj/asn1-ber"
 	"testing"
+    "encoding/hex"
+    //"fmt"
+    "bytes"
 )
 
 type compile_test struct {
@@ -22,7 +25,20 @@ var test_filters = []compile_test{
 	compile_test{filter_str: "(sn<=Miller)", filter_type: FilterLessOrEqual},
 	compile_test{filter_str: "(sn=*)", filter_type: FilterPresent},
 	compile_test{filter_str: "(sn~=Miller)", filter_type: FilterApproxMatch},
-	// compile_test{ filter_str: "()", filter_type: FilterExtensibleMatch },
+	// compile_test{ filter_str: "(cn:dn:=People)", filter_type: FilterExtensibleMatch },
+}
+
+type encoded_test struct {
+	filter_str  string
+    // reference good values
+	filter_encoded string
+}
+
+var encode_filters = []encoded_test {
+    encoded_test{
+        "(|(cn:dn:=people)(cn=xxx*yyy*zzz)(cn=*)(phones>=1))",
+        "a139a90f8202636e830670656f706c65840101a4150402636e300f8003787878810379797982037a7a7a8702636ea50b040670686f6e6573040131",
+    },
 }
 
 func TestFilter(t *testing.T) {
@@ -36,7 +52,7 @@ func TestFilter(t *testing.T) {
 		} else {
 			o, err := DecompileFilter(filter)
 			if err != nil {
-				t.Errorf("Problem compiling %s - %s", i, err.Error())
+				t.Errorf("Problem DecompileCompiling %s - %s", i, err.Error())
 			} else if i.filter_str != o {
 				t.Errorf("%q expected, got %q", i.filter_str, o)
 			}
@@ -44,6 +60,21 @@ func TestFilter(t *testing.T) {
 	}
 }
 
+func TestFilterEncode(t *testing.T) {
+    for _, i := range encode_filters {
+        p, err := CompileFilter(i.filter_str)
+        if err != nil {
+			t.Errorf("Problem compiling %s - %s", err.Error())
+		}
+        fBytes, error := hex.DecodeString(i.filter_encoded)
+        if error != nil {
+            t.Errorf("Error decoding byte string: %s",i.filter_encoded)
+        }
+        if !bytes.Equal(p.Bytes(),fBytes) {
+            t.Errorf("Filter does not match ref bytes %s", i.filter_str)
+        }
+    }
+}
 func BenchmarkFilterCompile(b *testing.B) {
 	b.StopTimer()
 	filters := make([]string, len(test_filters))

@@ -19,6 +19,12 @@ Tests Implemented:
    Filter Compile / Decompile
 
 TODO:
+   Escape/Unescape filters
+   Do something with binary attributes.
+   More tests.
+   FilterExtensibleMatch Decode
+   Use standard errors?
+   Controls
    Modify Requests / Responses
    Add Requests / Responses
    Delete Requests / Responses

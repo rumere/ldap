@@ -251,7 +251,7 @@ func encodeItem(attrOpVal []string) (*ber.Packet, *Error) {
 			return p, nil
 		} else if unescapedWildCardRegex.Match([]byte(val)) {
 			// TODO ADD escaping.
-			return EncodeSubStringMatch(attr, val)
+			return encodeSubStringMatch(attr, val)
 		}
 	}
 
@@ -280,7 +280,7 @@ SubstringFilter ::= SEQUENCE {
              final          [2] AssertionValue } }
 */
 
-func EncodeSubStringMatch(attr, value string) (*ber.Packet, *Error) {
+func encodeSubStringMatch(attr, value string) (*ber.Packet, *Error) {
 	p := ber.Encode(ber.ClassContext, ber.TypeConstructed,
 		FilterSubstrings, nil, FilterMap[FilterSubstrings])
 	p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, attr, "type"))
@@ -459,12 +459,14 @@ func DecompileFilter(packet *ber.Packet) (ret string, err *Error) {
 		ret += "<="
 		ret += ber.DecodeString(packet.Children[1].Data.Bytes())
 	case FilterPresent:
-		ret += ber.DecodeString(packet.Children[0].Data.Bytes())
+        ret += ber.DecodeString(packet.Data.Bytes())
 		ret += "=*"
 	case FilterApproxMatch:
 		ret += ber.DecodeString(packet.Children[0].Data.Bytes())
 		ret += "~="
 		ret += ber.DecodeString(packet.Children[1].Data.Bytes())
+    case FilterExtensibleMatch:
+        // TODO
 	}
 
 	ret += ")"
