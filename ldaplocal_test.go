@@ -11,11 +11,12 @@ var local_ldap_server string = "localhost"
 var local_ldap_port uint16 = 1389
 var local_base_dn string = "dc=example,dc=com"
 var local_filter []string = []string{
-    "(uniqueMember=*)",
+	"(uniqueMember=*)",
 	"(|(uniqueMember=*)(sn=Abbie))",
 	"(&(objectclass=person)(cn=ab*))",
 	"(&(objectclass=person)(cn=ko*))",
-    "(&(|(sn=an*)(sn=ba*))(!(sn=bar*)))"}
+	"(&(|(sn=an*)(sn=ba*))(!(sn=bar*)))",
+	"(&(ou:dn:=people)(sn=aa*))"}
 
 // go test -test.v -run="TestLocalSearch$" ldap
 // Setup an OpenDJ server on port 1389 with 2000->20k default entries
@@ -39,16 +40,16 @@ func TestLocalConnect(t *testing.T) {
 func TestLocalSearch(t *testing.T) {
 	fmt.Printf("TestSearch: starting...\n")
 	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
-    
-    // l.Debug = true
+
+	// l.Debug = true
 	if err != nil {
 		t.Errorf(err.Error())
 		return
 	}
 	defer l.Close()
-    
-    err = l.Bind(local_ldap_binddn, local_ldap_passwd)
-    if err != nil {
+
+	err = l.Bind(local_ldap_binddn, local_ldap_passwd)
+	if err != nil {
 		t.Errorf(err.Error())
 		return
 	}
@@ -58,14 +59,14 @@ func TestLocalSearch(t *testing.T) {
 		local_filter[0],
 		local_attributes,
 		nil)
-    // ber.Debug = true
+	// ber.Debug = true
 	sr, err := l.Search(search_request)
 	if err != nil {
 		t.Errorf(err.Error())
 		return
 	}
 	fmt.Printf("TestSearch: %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
-    //fmt.Printf("TestSearch: num of entries = %d\n\n",  len(sr.Entries))
+	//fmt.Printf("TestSearch: num of entries = %d\n\n",  len(sr.Entries))
 }
 
 func TestLocalSearchWithPaging(t *testing.T) {

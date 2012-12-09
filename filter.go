@@ -459,14 +459,14 @@ func DecompileFilter(packet *ber.Packet) (ret string, err *Error) {
 		ret += "<="
 		ret += ber.DecodeString(packet.Children[1].Data.Bytes())
 	case FilterPresent:
-        ret += ber.DecodeString(packet.Data.Bytes())
+		ret += ber.DecodeString(packet.Data.Bytes())
 		ret += "=*"
 	case FilterApproxMatch:
 		ret += ber.DecodeString(packet.Children[0].Data.Bytes())
 		ret += "~="
 		ret += ber.DecodeString(packet.Children[1].Data.Bytes())
-    case FilterExtensibleMatch:
-        // TODO
+	case FilterExtensibleMatch:
+		// TODO
 	}
 
 	ret += ")"
