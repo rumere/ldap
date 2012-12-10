@@ -105,6 +105,7 @@ const (
 	ErrorFilterCompile   = 201
 	ErrorFilterDecompile = 202
 	ErrorDebugging       = 203
+	ErrorEncoding        = 204
 )
 
 var LDAPResultCodeMap = map[uint8]string{

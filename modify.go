@@ -166,7 +166,7 @@ func (req *ModifyRequest) DumpModRequest() (dump string) {
 
 // Basic LDIF dump, no formating, etc
 func (mod *Mod) DumpMod() (dump string) {
-	dump = fmt.Sprintf("changetype: %s\n", ModMap[mod.ModOperation])
+	dump = fmt.Sprintf("changetype: modify\n")
 	dump += fmt.Sprintf("%s: %s\n", ModMap[mod.ModOperation], mod.Modification.Name)
 	for _, val := range mod.Modification.Values {
 		dump += fmt.Sprintf("%s: %s\n", mod.Modification.Name, val)

@@ -26,19 +26,47 @@ var local_attributes []string = []string{
 	"cn",
 	"description"}
 
+var local_addDNs []string = []string{"cn=Jon Boy,ou=People,dc=example,dc=com"}
+var local_addAttrs []EntryAttribute = []EntryAttribute{
+	EntryAttribute{
+		Name: "objectclass",
+		Values: []string{
+			"person", "inetOrgPerson", "organizationalPerson", "top",
+		},
+	},
+	EntryAttribute{
+		Name: "cn",
+		Values: []string{
+			"Jon Boy",
+		},
+	},
+	EntryAttribute{
+		Name: "givenName",
+		Values: []string{
+			"Jon",
+		},
+	},
+	EntryAttribute{
+		Name: "sn",
+		Values: []string{
+			"Boy",
+		},
+	},
+}
+
 func TestLocalConnect(t *testing.T) {
-	fmt.Printf("TestConnect: starting...\n")
+	fmt.Printf("TestLocalConnect: starting...\n")
 	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
 	if err != nil {
 		t.Errorf(err.Error())
 		return
 	}
 	defer l.Close()
-	fmt.Printf("TestConnect: finished...\n")
+	fmt.Printf("TestLocalConnect: finished...\n")
 }
 
 func TestLocalSearch(t *testing.T) {
-	fmt.Printf("TestSearch: starting...\n")
+	fmt.Printf("TestLocalSearch: starting...\n")
 	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
 
 	// l.Debug = true
@@ -65,12 +93,12 @@ func TestLocalSearch(t *testing.T) {
 		t.Errorf(err.Error())
 		return
 	}
-	fmt.Printf("TestSearch: %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
+	fmt.Printf("TestLocalSearch: %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
 	//fmt.Printf("TestSearch: num of entries = %d\n\n",  len(sr.Entries))
 }
 
 func TestLocalSearchWithPaging(t *testing.T) {
-	fmt.Printf("TestSearchWithPaging: starting...\n")
+	fmt.Printf("TestLocalSearchWithPaging: starting...\n")
 	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
 	if err != nil {
 		t.Errorf(err.Error())
@@ -96,7 +124,7 @@ func TestLocalSearchWithPaging(t *testing.T) {
 		return
 	}
 
-	fmt.Printf("TestSearchWithPaging: %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
+	fmt.Printf("TestLocalSearchWithPaging: %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
 }
 
 func testLocalMultiGoroutineSearch(t *testing.T, l *Conn, results chan *SearchResult, i int) {
@@ -118,13 +146,19 @@ func testLocalMultiGoroutineSearch(t *testing.T, l *Conn, results chan *SearchRe
 }
 
 func TestLocalMultiGoroutineSearch(t *testing.T) {
-	fmt.Printf("TestMultiGoroutineSearch: starting...\n")
+	fmt.Printf("TestLocalMultiGoroutineSearch: starting...\n")
 	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
 	if err != nil {
 		t.Errorf(err.Error())
 		return
 	}
 	defer l.Close()
+
+	err = l.Bind(local_ldap_binddn, local_ldap_passwd)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
 
 	results := make([]chan *SearchResult, len(local_filter))
 	for i := range local_filter {
@@ -138,5 +172,38 @@ func TestLocalMultiGoroutineSearch(t *testing.T) {
 		} else {
 			fmt.Printf("TestLocalMultiGoroutineSearch(%d): %s -> num of entries = %d\n", i, local_filter[i], len(sr.Entries))
 		}
+	}
+}
+
+func TestLocalAddAndDelete(t *testing.T) {
+	fmt.Printf("TestLocalAddAndDelete: starting...\n")
+	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	defer l.Close()
+
+	err = l.Bind(local_ldap_binddn, local_ldap_passwd)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+
+	addReq := NewAddRequest(local_addDNs[0])
+	for _, attr := range local_addAttrs {
+		addReq.AddAttribute(&attr)
+	}
+	fmt.Printf("Adding: %s\n", local_addDNs[0])
+	err = l.Add(addReq)
+	if err != nil {
+		t.Errorf("Add : %s : result = %d\n", addDNs[0], err.ResultCode)
+		return
+	}
+	fmt.Printf("Deleting: %s\n", local_addDNs[0])
+	err = l.Delete(local_addDNs[0])
+	if err != nil {
+		t.Errorf("Delete : %s : result = %d\n", addDNs[0], err.ResultCode)
+		return
 	}
 }
