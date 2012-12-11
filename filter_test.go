@@ -2,7 +2,7 @@ package ldap
 
 import (
 	"encoding/hex"
-	"github.com/hsoj/asn1-ber"
+	"github.com/mavricknz/asn1-ber"
 	"testing"
 	//"fmt"
 	"bytes"
@@ -37,7 +37,7 @@ type encoded_test struct {
 var encode_filters = []encoded_test{
 	encoded_test{
 		"(|(cn:dn:=people)(cn=xxx*yyy*zzz)(cn=*)(phones>=1))",
-		"a139a90f8202636e830670656f706c65840101a4150402636e300f8003787878810379797982037a7a7a8702636ea50b040670686f6e6573040131",
+		"a139a90f8202636e830670656f706c658401ffa4150402636e300f8003787878810379797982037a7a7a8702636ea50b040670686f6e6573040131",
 	},
 }
 
@@ -64,14 +64,26 @@ func TestFilterEncode(t *testing.T) {
 	for _, i := range encode_filters {
 		p, err := CompileFilter(i.filter_str)
 		if err != nil {
-			t.Errorf("Problem compiling %s - %s", err.Error())
+			t.Errorf("Problem compiling %s - %s\n", err.Error())
 		}
 		fBytes, error := hex.DecodeString(i.filter_encoded)
 		if error != nil {
-			t.Errorf("Error decoding byte string: %s", i.filter_encoded)
+			t.Errorf("Error decoding byte string: %s\n", i.filter_encoded)
 		}
 		if !bytes.Equal(p.Bytes(), fBytes) {
-			t.Errorf("Filter does not match ref bytes %s", i.filter_str)
+			l := len(fBytes)
+			pBytes := p.Bytes()
+			if l > len(pBytes) {
+				l = len(pBytes)
+			}
+			for i := 0; i < l; i++ {
+				if pBytes[i] != fBytes[i] {
+					l = i
+					break
+				}
+			}
+			t.Errorf("Filter does not match ref bytes (first difference at byte %d) %s\n\n%s\n%s",
+				l, i.filter_str, hex.Dump(p.Bytes()), hex.Dump(fBytes))
 		}
 	}
 }
