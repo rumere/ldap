@@ -3,19 +3,21 @@ package ldap
 import (
 	"errors"
 	"fmt"
-	"github.com/hsoj/asn1-ber"
+	"github.com/mavricknz/asn1-ber"
 )
 
 const (
-	ModAdd     = 0
-	ModDelete  = 1
-	ModReplace = 2
+	ModAdd       = 0
+	ModDelete    = 1
+	ModReplace   = 2
+	ModIncrement = 3
 )
 
 var ModMap map[uint8]string = map[uint8]string{
-	ModAdd:     "add",
-	ModDelete:  "delete",
-	ModReplace: "replace",
+	ModAdd:       "add",
+	ModDelete:    "delete",
+	ModReplace:   "replace",
+	ModIncrement: "increment",
 }
 
 /* Reuse search struct, should Values be a [][]byte
@@ -30,8 +32,9 @@ type Mod struct {
 }
 
 type ModifyRequest struct {
-	DN   string
-	Mods []Mod
+	DN       string
+	Mods     []Mod
+	Controls []Control
 }
 
 /* Example...
@@ -151,7 +154,7 @@ func encodeModifyRequest(req *ModifyRequest) (p *ber.Packet) {
 }
 
 func NewModifyRequest(dn string) (req *ModifyRequest) {
-	req = &ModifyRequest{DN: dn, Mods: make([]Mod, 0, 5)}
+	req = &ModifyRequest{DN: dn, Mods: make([]Mod, 0, 5), Controls: make([]Control, 0)}
 	return
 }
 

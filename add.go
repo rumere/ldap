@@ -3,12 +3,13 @@ package ldap
 import (
 	"errors"
 	"fmt"
-	"github.com/hsoj/asn1-ber"
+	"github.com/mavricknz/asn1-ber"
 )
 
 type AddRequest struct {
 	DN         string
 	Attributes []EntryAttribute
+	Controls   []Control
 }
 
 func (l *Conn) Add(addReq *AddRequest) *Error {
@@ -113,7 +114,7 @@ func (req *AddRequest) Bytes() []byte {
 }
 
 func NewAddRequest(dn string) (req *AddRequest) {
-	req = &AddRequest{DN: dn, Attributes: make([]EntryAttribute, 0, 5)}
+	req = &AddRequest{DN: dn, Attributes: make([]EntryAttribute, 0, 5), Controls: make([]Control, 0)}
 	return
 }
 

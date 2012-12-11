@@ -54,7 +54,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/hsoj/asn1-ber"
+	"github.com/mavricknz/asn1-ber"
 	"regexp"
 )
 

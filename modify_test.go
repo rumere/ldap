@@ -3,7 +3,7 @@ package ldap
 import (
 	//"encoding/hex"
 	"fmt"
-	"github.com/hsoj/asn1-ber"
+	"github.com/mavricknz/asn1-ber"
 	"testing"
 	//"bytes"
 )
