@@ -14,6 +14,7 @@ var local_filter []string = []string{
 	"(uniqueMember=*)",
 	"(|(uniqueMember=*)(sn=Abbie))",
 	"(&(objectclass=person)(cn=ab*))",
+    `(&(objectclass=person)(cn=\41\42*))`, // same as above
 	"(&(objectclass=person)(cn=ko*))",
 	"(&(|(sn=an*)(sn=ba*))(!(sn=bar*)))",
 	"(&(ou:dn:=people)(sn=aa*))"}
