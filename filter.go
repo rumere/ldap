@@ -3,6 +3,9 @@
 // license that can be found in the LICENSE file.
 
 // File contains a filter compiler/decompiler
+
+// Influenced by Perl LDAP and OpenDJ, esp regex's.
+
 /*
 An LDAP search filter is defined in Section 4.5.1 of [RFC4511]
         Filter ::= CHOICE {
@@ -122,6 +125,8 @@ var endRegex *regexp.Regexp
 var itemRegex *regexp.Regexp
 var unescapedWildCardRegex *regexp.Regexp
 var wildCardSearchRegex *regexp.Regexp
+var unescapeFilterRegex *regexp.Regexp
+var escapeFilterRegex *regexp.Regexp
 
 var FilterDebug bool = false
 
@@ -132,6 +137,8 @@ func init() {
 		`^\(\s*([-;.:\d\w]*[-;\d\w])\s*([:~<>]?=)((?:\\.|[^\\()]+)*)\)\s*`)
 	unescapedWildCardRegex = regexp.MustCompile(`^(\\.|[^\\*]+)*\*`)
 	wildCardSearchRegex = regexp.MustCompile(`^((\\.|[^\\*]+)*)\*`)
+    unescapeFilterRegex = regexp.MustCompile(`\\([\da-fA-F]{2}|[()\\*])`)
+    escapeFilterRegex = regexp.MustCompile(`([\\\(\)\*\0-\37\177-\377])`)
 }
 
 func CompileFilter(filter string) (*ber.Packet, *Error) {
@@ -263,7 +270,7 @@ func encodeItem(attrOpVal []string) (*ber.Packet, *Error) {
 			ber.TagOctetString, attr, "Attribute"))
 	p.AppendChild(
 		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
-			ber.TagOctetString, val, "Value"))
+			ber.TagOctetString, UnescapeFilterValue(val), "Value"))
 
 	return p, nil
 }
@@ -312,14 +319,14 @@ func encodeSubStringMatch(attr, value string) (*ber.Packet, *Error) {
 			if FilterDebug {
 				fmt.Println("initial : " + matches[1])
 			}
-			seq.AppendChild(ber.NewString(ber.ClassContext, ber.TypePrimative, FilterSubstringsInitial, matches[1], "initial"))
+			seq.AppendChild(ber.NewString(ber.ClassContext, ber.TypePrimative, FilterSubstringsInitial, UnescapeFilterValue(matches[1]), "initial"))
 		}
 		// past initial but not end
 		if pos > 0 && len(matches) > 1 && len(matches[1]) > 0 {
 			if FilterDebug {
 				fmt.Println("any : " + matches[1])
 			}
-			seq.AppendChild(ber.NewString(ber.ClassContext, ber.TypePrimative, FilterSubstringsAny, matches[1], "any"))
+			seq.AppendChild(ber.NewString(ber.ClassContext, ber.TypePrimative, FilterSubstringsAny, UnescapeFilterValue(matches[1]), "any"))
 		}
 
 		pos += len(matches[0])
@@ -331,7 +338,7 @@ func encodeSubStringMatch(attr, value string) (*ber.Packet, *Error) {
 		if FilterDebug {
 			fmt.Println("final : " + value[pos:])
 		}
-		seq.AppendChild(ber.NewString(ber.ClassContext, ber.TypePrimative, FilterSubstringsFinal, value[pos:], "final"))
+		seq.AppendChild(ber.NewString(ber.ClassContext, ber.TypePrimative, FilterSubstringsFinal, UnescapeFilterValue(value[pos:]), "final"))
 	}
 	p.AppendChild(seq)
 	if FilterDebug {
@@ -371,8 +378,7 @@ func encodeExtensibleMatch(attr, value string) (*ber.Packet, *Error) {
 			ptype := ber.NewString(ber.ClassContext, ber.TypePrimative, TagMatchingType, rtype, "type")
 			p.AppendChild(ptype)
 		}
-		// write an unescape
-		pval := ber.NewString(ber.ClassContext, ber.TypePrimative, TagMatchValue, value, "matchValue")
+		pval := ber.NewString(ber.ClassContext, ber.TypePrimative, TagMatchValue, UnescapeFilterValue(value), "matchValue")
 		p.AppendChild(pval)
 		if len(dn) > 0 {
 			pdn := ber.NewBoolean(ber.ClassContext, ber.TypePrimative, TagMatchDnAttributes, true, "dnAttributes")
@@ -471,4 +477,34 @@ func DecompileFilter(packet *ber.Packet) (ret string, err *Error) {
 
 	ret += ")"
 	return
+}
+
+func UnescapeFilterValue(filter string) string {
+    // regex wil only match \[)*\] or \xx x=a-fA-F
+    repl := unescapeFilterRegex.ReplaceAllFunc(
+        []byte(filter),
+        func(match []byte) ([]byte) {
+            // \( \) \\ \* 
+            if len(match) == 2 {
+                return []byte{match[1]}
+            }
+            // had issues with Decode, TODO fix to use Decode?.
+            res, _ := hex.DecodeString(string(match[1:]))
+            return res
+        },
+    )
+    return string(repl)
+}
+
+func EscapeFilterValue(filter string) string {
+    repl := escapeFilterRegex.ReplaceAllFunc(
+        []byte(filter),
+        func(match []byte) ([]byte) {
+            if len(match) == 2 {
+                return []byte(fmt.Sprintf("\\%02x", match[1]))
+            }
+            return []byte(fmt.Sprintf("\\%02x", match[0]))
+        },
+    )
+    return string(repl)
 }
