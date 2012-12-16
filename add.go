@@ -25,6 +25,10 @@ func (l *Conn) Add(addReq *AddRequest) *Error {
 
 	packet.AppendChild(encoded)
 
+	if addReq.Controls != nil && len(addReq.Controls) > 0 {
+		packet.AppendChild(encodeControls(addReq.Controls))
+	}
+
 	if l.Debug {
 		ber.PrintPacket(packet)
 	}
@@ -136,4 +140,11 @@ func (addReq *AddRequest) DumpAddRequest() (dump string) {
 	}
 	dump += fmt.Sprintf("\n")
 	return
+}
+
+func (req *AddRequest) AddControl(control Control) {
+	if req.Controls == nil {
+		req.Controls = make([]Control, 0)
+	}
+	req.Controls = append(req.Controls, control)
 }

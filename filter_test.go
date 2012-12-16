@@ -1,11 +1,11 @@
 package ldap
 
 import (
+	"bytes"
 	"encoding/hex"
+	"fmt"
 	"github.com/mavricknz/asn1-ber"
 	"testing"
-	"fmt"
-	"bytes"
 )
 
 type compile_test struct {
@@ -89,24 +89,24 @@ func TestFilterEncode(t *testing.T) {
 }
 
 func TestFilterValueUnescape(t *testing.T) {
-    filter := `cn=abc \(123\) \28bob\29 \\\\ \*`
-    filterStandard := `cn=abc (123) (bob) \\ *`
-    filterUnescaped := UnescapeFilterValue(filter)
-    if filterUnescaped != filterStandard {
-        t.Errorf("Standard and Unescaped filter do not match [%s] != [%s]\n" , filterStandard, filterUnescaped)
-    }
-    fmt.Printf("filter           : %s\n", filter)
-    fmt.Printf("filter Standard  : %s\n", filterStandard)
-    fmt.Printf("filter Unescaped : %s\n", UnescapeFilterValue(filter))
+	filter := `cn=abc \(123\) \28bob\29 \\\\ \*`
+	filterStandard := `cn=abc (123) (bob) \\ *`
+	filterUnescaped := UnescapeFilterValue(filter)
+	if filterUnescaped != filterStandard {
+		t.Errorf("Standard and Unescaped filter do not match [%s] != [%s]\n", filterStandard, filterUnescaped)
+	}
+	fmt.Printf("filter           : %s\n", filter)
+	fmt.Printf("filter Standard  : %s\n", filterStandard)
+	fmt.Printf("filter Unescaped : %s\n", UnescapeFilterValue(filter))
 }
 
 func TestFilterValueEscape(t *testing.T) {
-    filter := "£¥©" + `(*\)`
-    filterStandard := `\a3\a5\a9\28\2a\5c\29`
-    filterEscaped  := EscapeFilterValue(filter)
-    if filterEscaped != filterStandard {
-        t.Errorf("Standard and Escaped filter do not match [%s] != [%s]\n" , filterStandard, filterEscaped)
-    }
+	filter := "£¥©" + `(*\)`
+	filterStandard := `\a3\a5\a9\28\2a\5c\29`
+	filterEscaped := EscapeFilterValue(filter)
+	if filterEscaped != filterStandard {
+		t.Errorf("Standard and Escaped filter do not match [%s] != [%s]\n", filterStandard, filterEscaped)
+	}
 }
 
 func BenchmarkFilterCompile(b *testing.B) {

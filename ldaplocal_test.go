@@ -14,7 +14,7 @@ var local_filter []string = []string{
 	"(uniqueMember=*)",
 	"(|(uniqueMember=*)(sn=Abbie))",
 	"(&(objectclass=person)(cn=ab*))",
-    `(&(objectclass=person)(cn=\41\42*))`, // same as above
+	`(&(objectclass=person)(cn=\41\42*))`, // same as above
 	"(&(objectclass=person)(cn=ko*))",
 	"(&(|(sn=an*)(sn=ba*))(!(sn=bar*)))",
 	"(&(ou:dn:=people)(sn=aa*))"}
@@ -202,7 +202,66 @@ func TestLocalAddAndDelete(t *testing.T) {
 		return
 	}
 	fmt.Printf("Deleting: %s\n", local_addDNs[0])
-	err = l.Delete(local_addDNs[0])
+	delRequest := &DeleteRequest{local_addDNs[0], nil}
+	err = l.Delete(delRequest)
+	if err != nil {
+		t.Errorf("Delete : %s : result = %d\n", addDNs[0], err.ResultCode)
+		return
+	}
+}
+
+func TestLocalPermissiveModifyRequest(t *testing.T) {
+	fmt.Printf("LocalPermissiveModifyRequest: starting...\n")
+	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	defer l.Close()
+
+	err = l.Bind(local_ldap_binddn, local_ldap_passwd)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+
+	addReq := NewAddRequest(local_addDNs[0])
+	for _, attr := range local_addAttrs {
+		addReq.AddAttribute(&attr)
+	}
+	fmt.Printf("Adding: %s\n", local_addDNs[0])
+	err = l.Add(addReq)
+	if err != nil {
+		t.Errorf("Add : %s : result = %d\n", addDNs[0], err.ResultCode)
+		return
+	}
+	modreq := NewModifyRequest(local_addDNs[0])
+	mod := NewMod(ModAdd, "description", []string{"aaa"})
+	modreq.AddMod(mod)
+	fmt.Printf(modreq.DumpModRequest())
+	err = l.Modify(modreq)
+	if err != nil {
+		t.Errorf("Modify : %s : result = %d\n", addDNs[0], err.ResultCode)
+		return
+	}
+
+	mod = NewMod(ModAdd, "description", []string{"aaa", "bbb", "ccc"})
+	modreq = NewModifyRequest(local_addDNs[0])
+	modreq.AddMod(mod)
+	control := NewControlString(ControlTypePermissiveModifyRequest, true, "")
+	fmt.Println(control.String())
+	modreq.AddControl(control)
+	fmt.Printf(modreq.DumpModRequest())
+	err = l.Modify(modreq)
+	if err != nil {
+		t.Errorf("Modify (Permissive): %s : result = %d\n", addDNs[0], err.ResultCode)
+		return
+	}
+
+	fmt.Printf("Deleting: %s\n", local_addDNs[0])
+	delRequest := NewDeleteRequest(local_addDNs[0])
+	err = l.Delete(delRequest)
+
 	if err != nil {
 		t.Errorf("Delete : %s : result = %d\n", addDNs[0], err.ResultCode)
 		return

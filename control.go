@@ -12,8 +12,8 @@ import (
 
 const (
 	//1.2.826.0.1.3344810.2.3
-	//1.2.840.113556.1.4.1413
-	ControlTypePaging = "1.2.840.113556.1.4.319"
+	ControlTypePermissiveModifyRequest = "1.2.840.113556.1.4.1413"
+	ControlTypePaging                  = "1.2.840.113556.1.4.319"
 
 //1.2.840.113556.1.4.473
 //1.2.840.113556.1.4.805
@@ -40,7 +40,8 @@ const (
 )
 
 var ControlTypeMap = map[string]string{
-	ControlTypePaging: "Paging",
+	ControlTypePermissiveModifyRequest: "PermissiveModifyRequest",
+	ControlTypePaging:                  "Paging",
 }
 
 type Control interface {
@@ -65,12 +66,14 @@ func (c *ControlString) Encode() (p *ber.Packet) {
 	if c.Criticality {
 		p.AppendChild(ber.NewBoolean(ber.ClassUniversal, ber.TypePrimative, ber.TagBoolean, c.Criticality, "Criticality"))
 	}
-	p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, c.ControlValue, "Control Value"))
+	if len(c.ControlValue) != 0 {
+		p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, c.ControlValue, "Control Value"))
+	}
 	return
 }
 
 func (c *ControlString) String() string {
-	return fmt.Sprintf("Control Type: %s (%q)  Criticality: %s  Control Value: %s", ControlTypeMap[c.ControlType], c.ControlType, c.Criticality, c.ControlValue)
+	return fmt.Sprintf("Control Type: %s (%q)  Criticality: %t  Control Value: %s", ControlTypeMap[c.ControlType], c.ControlType, c.Criticality, c.ControlValue)
 }
 
 type ControlPaging struct {
@@ -122,6 +125,13 @@ func FindControl(Controls []Control, ControlType string) Control {
 	return nil
 }
 
+/*
+Control ::= SEQUENCE {
+             controlType             LDAPOID,
+             criticality             BOOLEAN DEFAULT FALSE,
+             controlValue            OCTET STRING OPTIONAL }
+*/
+
 func DecodeControl(p *ber.Packet) Control {
 	ControlType := p.Children[0].Value.(string)
 	Criticality := false
@@ -135,6 +145,7 @@ func DecodeControl(p *ber.Packet) Control {
 	}
 
 	value.Description = "Control Value"
+	/* Special cases */
 	switch ControlType {
 	case ControlTypePaging:
 		value.Description += " (Paging)"

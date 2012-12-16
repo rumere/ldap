@@ -17,17 +17,14 @@ Working:
 
 Tests Implemented:
    Filter Compile / Decompile
-
+   Local OpenDJ Tests for most Operations
+   
 TODO:
-   Escape/Unescape filters
+   Channel/Callback based search results.
+   Test to not depend on initial Directory setup
    Do something with binary attributes.
-   More tests.
+   More/better tests.
    FilterExtensibleMatch Decode
-   Use standard errors?
-   Controls
-   Modify Requests / Responses
-   Add Requests / Responses
-   Delete Requests / Responses
    Modify DN Requests / Responses
    Compare Requests / Responses
    Implement Tests / Benchmarks

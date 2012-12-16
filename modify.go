@@ -74,6 +74,9 @@ func (l *Conn) Modify(modReq *ModifyRequest) *Error {
 	packet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Request")
 	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimative, ber.TagInteger, messageID, "MessageID"))
 	packet.AppendChild(encodeModifyRequest(modReq))
+	if modReq.Controls != nil && len(modReq.Controls) > 0 {
+		packet.AppendChild(encodeControls(modReq.Controls))
+	}
 
 	if l.Debug {
 		ber.PrintPacket(packet)
@@ -190,4 +193,11 @@ func (req *ModifyRequest) AddMod(mod *Mod) {
 
 func (req *ModifyRequest) AddMods(mods []Mod) {
 	req.Mods = append(req.Mods, mods...)
+}
+
+func (req *ModifyRequest) AddControl(control Control) {
+	if req.Controls == nil {
+		req.Controls = make([]Control, 0)
+	}
+	req.Controls = append(req.Controls, control)
 }

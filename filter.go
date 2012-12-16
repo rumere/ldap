@@ -137,8 +137,8 @@ func init() {
 		`^\(\s*([-;.:\d\w]*[-;\d\w])\s*([:~<>]?=)((?:\\.|[^\\()]+)*)\)\s*`)
 	unescapedWildCardRegex = regexp.MustCompile(`^(\\.|[^\\*]+)*\*`)
 	wildCardSearchRegex = regexp.MustCompile(`^((\\.|[^\\*]+)*)\*`)
-    unescapeFilterRegex = regexp.MustCompile(`\\([\da-fA-F]{2}|[()\\*])`)
-    escapeFilterRegex = regexp.MustCompile(`([\\\(\)\*\0-\37\177-\377])`)
+	unescapeFilterRegex = regexp.MustCompile(`\\([\da-fA-F]{2}|[()\\*])`)
+	escapeFilterRegex = regexp.MustCompile(`([\\\(\)\*\0-\37\177-\377])`)
 }
 
 func CompileFilter(filter string) (*ber.Packet, *Error) {
@@ -161,7 +161,7 @@ func parse(filter string) (*ber.Packet, *Error) {
 
 	// Simple non recursive method to create ber packets.
 	// If its an Op "&|!" then push onto the stack
-	// If its am filter expression (item) then add as a child
+	// If its a filter expression (item) then add as a child
 	// if its an ending ) pop the stack adding as child to above.
 	// plus special cases of course.
 
@@ -394,16 +394,6 @@ func encodeExtensibleMatch(attr, value string) (*ber.Packet, *Error) {
 	return p, nil
 }
 
-// TODO: Really unescape
-func unescape(raw string) string {
-	return raw
-}
-
-// TODO: Really escape
-func escape(raw string) string {
-	return raw
-}
-
 func DecompileFilter(packet *ber.Packet) (ret string, err *Error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -480,31 +470,31 @@ func DecompileFilter(packet *ber.Packet) (ret string, err *Error) {
 }
 
 func UnescapeFilterValue(filter string) string {
-    // regex wil only match \[)*\] or \xx x=a-fA-F
-    repl := unescapeFilterRegex.ReplaceAllFunc(
-        []byte(filter),
-        func(match []byte) ([]byte) {
-            // \( \) \\ \* 
-            if len(match) == 2 {
-                return []byte{match[1]}
-            }
-            // had issues with Decode, TODO fix to use Decode?.
-            res, _ := hex.DecodeString(string(match[1:]))
-            return res
-        },
-    )
-    return string(repl)
+	// regex wil only match \[)*\] or \xx x=a-fA-F
+	repl := unescapeFilterRegex.ReplaceAllFunc(
+		[]byte(filter),
+		func(match []byte) []byte {
+			// \( \) \\ \* 
+			if len(match) == 2 {
+				return []byte{match[1]}
+			}
+			// had issues with Decode, TODO fix to use Decode?.
+			res, _ := hex.DecodeString(string(match[1:]))
+			return res
+		},
+	)
+	return string(repl)
 }
 
 func EscapeFilterValue(filter string) string {
-    repl := escapeFilterRegex.ReplaceAllFunc(
-        []byte(filter),
-        func(match []byte) ([]byte) {
-            if len(match) == 2 {
-                return []byte(fmt.Sprintf("\\%02x", match[1]))
-            }
-            return []byte(fmt.Sprintf("\\%02x", match[0]))
-        },
-    )
-    return string(repl)
+	repl := escapeFilterRegex.ReplaceAllFunc(
+		[]byte(filter),
+		func(match []byte) []byte {
+			if len(match) == 2 {
+				return []byte(fmt.Sprintf("\\%02x", match[1]))
+			}
+			return []byte(fmt.Sprintf("\\%02x", match[0]))
+		},
+	)
+	return string(repl)
 }
