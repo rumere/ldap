@@ -6,22 +6,21 @@ import (
 	"github.com/mavricknz/asn1-ber"
 )
 
-
 /*
 CompareRequest ::= [APPLICATION 14] SEQUENCE {
     entry           LDAPDN,
     ava             AttributeValueAssertion }
-    
+
 AttributeValueAssertion ::= SEQUENCE {
     attributeDesc   AttributeDescription,
     assertionValue  AssertionValue }
 */
 
-type CompareRequest struct{
-    DN string
-    Name string
-    Value string
-    Controls []Control
+type CompareRequest struct {
+	DN       string
+	Name     string
+	Value    string
+	Controls []Control
 }
 
 func (l *Conn) Compare(compareReq *CompareRequest) *Error {
@@ -29,12 +28,12 @@ func (l *Conn) Compare(compareReq *CompareRequest) *Error {
 
 	packet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Request")
 	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimative, ber.TagInteger, messageID, "MessageID"))
-    compPacket, err := encodeCompareRequest(compareReq)
-    if err != nil {
-        return err
-    }
-    packet.AppendChild(compPacket)
-    
+	compPacket, err := encodeCompareRequest(compareReq)
+	if err != nil {
+		return err
+	}
+	packet.AppendChild(compPacket)
+
 	if compareReq.Controls != nil && len(compareReq.Controls) > 0 {
 		packet.AppendChild(encodeControls(compareReq.Controls))
 	}
@@ -76,25 +75,25 @@ func (l *Conn) Compare(compareReq *CompareRequest) *Error {
 	}
 
 	result_code, result_description := getLDAPResultCode(packet)
-    
-    if l.Debug {
+
+	if l.Debug {
 		fmt.Printf("%d: returning\n", messageID)
 	}
-    // CompareTrue = 6, CompareFalse = 5
-    // return an "Error"
+	// CompareTrue = 6, CompareFalse = 5
+	// return an "Error"
 	return NewError(result_code, errors.New(result_description))
 }
 
 func encodeCompareRequest(req *CompareRequest) (*ber.Packet, *Error) {
-    
-    p := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ApplicationCompareRequest, nil, ApplicationMap[ApplicationCompareRequest])
-    p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, req.DN, "LDAP DN"))
-    ava, err := encodeItem([]string{req.Name,"=",req.Value})
-    if err != nil {
-        return nil, err
-    }
-    p.AppendChild(ava)
-	return p,nil
+
+	p := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ApplicationCompareRequest, nil, ApplicationMap[ApplicationCompareRequest])
+	p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, req.DN, "LDAP DN"))
+	ava, err := encodeItem([]string{req.Name, "=", req.Value})
+	if err != nil {
+		return nil, err
+	}
+	p.AppendChild(ava)
+	return p, nil
 }
 
 func NewCompareRequest(dn, name, value string) (req *CompareRequest) {

@@ -175,6 +175,7 @@ func TestLocalMultiGoroutineSearch(t *testing.T) {
 		}
 	}
 }
+
 // TODO: fix a lot of the code duplication
 
 func TestLocalAddAndDelete(t *testing.T) {
@@ -236,25 +237,25 @@ func TestLocalCompare(t *testing.T) {
 		t.Errorf("Add : %s : result = %d\n", addDNs[0], err.ResultCode)
 		return
 	}
-    
-    fmt.Printf("Comparing: %s : sn=Boy which is True\n", local_addDNs[0])
-    compareReq := NewCompareRequest(local_addDNs[0], "sn", "Boy")
-    err = l.Compare(compareReq)
-    if err.ResultCode != LDAPResultCompareTrue {
-        t.Errorf("Compare True: %s : result = %d\n", addDNs[0], err.ResultCode)
+
+	fmt.Printf("Comparing: %s : sn=Boy which is True\n", local_addDNs[0])
+	compareReq := NewCompareRequest(local_addDNs[0], "sn", "Boy")
+	err = l.Compare(compareReq)
+	if err.ResultCode != LDAPResultCompareTrue {
+		t.Errorf("Compare True: %s : result = %d\n", addDNs[0], err.ResultCode)
 		return
-    }
-    fmt.Printf("Compare Result : %d : %s\n", err.ResultCode, LDAPResultCodeMap[err.ResultCode])
-    
-    fmt.Printf("Comparing: %s : sn=BoyIsThisWrong which is False\n", local_addDNs[0])
-    compareReq = NewCompareRequest(local_addDNs[0], "sn", "BoyIsThisWrong")
-    err = l.Compare(compareReq)
-    if err.ResultCode != LDAPResultCompareFalse {
-        t.Errorf("Compare False: %s : result = %d\n", addDNs[0], err.ResultCode)
+	}
+	fmt.Printf("Compare Result : %d : %s\n", err.ResultCode, LDAPResultCodeMap[err.ResultCode])
+
+	fmt.Printf("Comparing: %s : sn=BoyIsThisWrong which is False\n", local_addDNs[0])
+	compareReq = NewCompareRequest(local_addDNs[0], "sn", "BoyIsThisWrong")
+	err = l.Compare(compareReq)
+	if err.ResultCode != LDAPResultCompareFalse {
+		t.Errorf("Compare False: %s : result = %d\n", addDNs[0], err.ResultCode)
 		return
-    }
-    fmt.Printf("Compare Result : %d : %s\n", err.ResultCode, LDAPResultCodeMap[err.ResultCode])
-    
+	}
+	fmt.Printf("Compare Result : %d : %s\n", err.ResultCode, LDAPResultCodeMap[err.ResultCode])
+
 	fmt.Printf("Deleting: %s\n", local_addDNs[0])
 	delRequest := &DeleteRequest{local_addDNs[0], nil}
 	err = l.Delete(delRequest)
