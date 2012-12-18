@@ -148,10 +148,10 @@ func CompileFilter(filter string) (*ber.Packet, *Error) {
 	if filter[0] != '(' {
 		return nil, NewError(ErrorFilterCompile, errors.New("Filter does not start with '('"))
 	}
-	return parse(filter)
+	return filterParse(filter)
 }
 
-func parse(filter string) (*ber.Packet, *Error) {
+func filterParse(filter string) (*ber.Packet, *Error) {
 	var err *Error
 	var pTmp1 *ber.Packet
 	pos := 0
@@ -168,7 +168,7 @@ func parse(filter string) (*ber.Packet, *Error) {
 	for {
 		if matches := opRegex.FindStringSubmatch(filter[pos:]); len(matches) != 0 {
 			pos += len(matches[0])
-			pTmp1, err = encode(FilterComponent[matches[1]], nil)
+			pTmp1, err = filterEncode(FilterComponent[matches[1]], nil)
 			if err != nil {
 				return nil, err
 			}
@@ -191,7 +191,7 @@ func parse(filter string) (*ber.Packet, *Error) {
 			continue
 		} else if matches := itemRegex.FindStringSubmatch(filter[pos:]); len(matches) != 0 {
 			pos += len(matches[0])
-			pTmp1, err = encode(FilterItem, matches[1:4])
+			pTmp1, err = filterEncode(FilterItem, matches[1:4])
 			if err != nil {
 				return nil, err
 			}
@@ -213,7 +213,7 @@ func parse(filter string) (*ber.Packet, *Error) {
 	return p[0], nil
 }
 
-func encode(opType uint64, value []string) (*ber.Packet, *Error) {
+func filterEncode(opType uint64, value []string) (*ber.Packet, *Error) {
 	var p *ber.Packet = nil
 	var err *Error
 

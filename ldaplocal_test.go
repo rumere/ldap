@@ -1,3 +1,7 @@
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package ldap
 
 import (
@@ -265,8 +269,8 @@ func TestLocalCompare(t *testing.T) {
 	}
 }
 
-func TestLocalPermissiveModifyRequest(t *testing.T) {
-	fmt.Printf("LocalPermissiveModifyRequest: starting...\n")
+func TestLocalControlPermissiveModifyRequest(t *testing.T) {
+	fmt.Printf("ControlPermissiveModifyRequest: starting...\n")
 	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
 	if err != nil {
 		t.Errorf(err.Error())
@@ -290,6 +294,7 @@ func TestLocalPermissiveModifyRequest(t *testing.T) {
 		t.Errorf("Add : %s : result = %d\n", addDNs[0], err.ResultCode)
 		return
 	}
+
 	modreq := NewModifyRequest(local_addDNs[0])
 	mod := NewMod(ModAdd, "description", []string{"aaa"})
 	modreq.AddMod(mod)
@@ -312,6 +317,107 @@ func TestLocalPermissiveModifyRequest(t *testing.T) {
 		t.Errorf("Modify (Permissive): %s : result = %d\n", addDNs[0], err.ResultCode)
 		return
 	}
+
+	mod = NewMod(ModAdd, "description", []string{"aaa", "bbb", "ccc", "ddd"})
+	modreq = NewModifyRequest(local_addDNs[0])
+	modreq.AddMod(mod)
+	control = NewControlPermissiveModifyRequest(false)
+	fmt.Println(control.String())
+	modreq.AddControl(control)
+	fmt.Printf(modreq.DumpModRequest())
+	err = l.Modify(modreq)
+	if err != nil {
+		t.Errorf("Modify (Permissive): %s : result = %d\n", addDNs[0], err.ResultCode)
+		return
+	}
+
+	fmt.Printf("Deleting: %s\n", local_addDNs[0])
+	delRequest := NewDeleteRequest(local_addDNs[0])
+	err = l.Delete(delRequest)
+
+	if err != nil {
+		t.Errorf("Delete : %s : result = %d\n", addDNs[0], err.ResultCode)
+		return
+	}
+}
+
+func TestLocalControlMatchedValuesRequest(t *testing.T) {
+	fmt.Printf("LocalControlMatchedValuesRequest: starting...\n")
+	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	defer l.Close()
+
+	err = l.Bind(local_ldap_binddn, local_ldap_passwd)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+
+	addReq := NewAddRequest(local_addDNs[0])
+	for _, attr := range local_addAttrs {
+		addReq.AddAttribute(&attr)
+	}
+	fmt.Printf("Adding: %s\n", local_addDNs[0])
+	err = l.Add(addReq)
+	if err != nil {
+		t.Errorf("Add : %s : result = %d\n", addDNs[0], err.ResultCode)
+		return
+	}
+
+	fmt.Printf("Modify: %s = {aaa, bbb, ccc}\n", "description")
+	mod := NewMod(ModAdd, "description", []string{"aaa", "bbb", "ccc", "aabb"})
+	modreq := NewModifyRequest(local_addDNs[0])
+	modreq.AddMod(mod)
+	err = l.Modify(modreq)
+	if err != nil {
+		t.Errorf("Modify: %s : result = %d\n", addDNs[0], err.ResultCode)
+		return
+	}
+
+	control := NewControlMatchedValuesRequest(true, "(description=aaa)")
+	fmt.Println(control.String())
+	fmt.Printf("Search: (objectclass=*), (description=aaa) via MatchedValuesRequest\n")
+	search_request := NewSearchRequest(
+		local_addDNs[0],
+		ScopeBaseObject, DerefAlways, 0, 0, false,
+		"(objectclass=*)",
+		[]string{"description"},
+		nil,
+	)
+	search_request.AddControl(control)
+	//l.Debug = true
+	sr, err := l.Search(search_request)
+	if err != nil {
+		t.Errorf("Search: %s : result = %d : %s\n", addDNs[0], err.ResultCode, err.Err)
+		return
+	}
+	//l.Debug = false
+	fmt.Printf("Search Result:")
+	fmt.Println(sr.Entries[0].Attributes[0])
+
+	control = NewControlMatchedValuesRequest(true, "(description=a*)")
+	fmt.Println(control.String())
+	fmt.Printf("Search: (objectclass=*), (description=a*) via MatchedValuesRequest\n")
+	search_request = NewSearchRequest(
+		local_addDNs[0],
+		ScopeBaseObject, DerefAlways, 0, 0, false,
+		"(objectclass=*)",
+		[]string{"description"},
+		nil,
+	)
+	search_request.AddControl(control)
+	//l.Debug = true
+	sr, err = l.Search(search_request)
+	if err != nil {
+		t.Errorf("Search: %s : result = %d : %s\n", addDNs[0], err.ResultCode, err.Err)
+		return
+	}
+	//l.Debug = false
+	fmt.Printf("Search Result:")
+	fmt.Println(sr.Entries[0].Attributes[0])
 
 	fmt.Printf("Deleting: %s\n", local_addDNs[0])
 	delRequest := NewDeleteRequest(local_addDNs[0])

@@ -11,12 +11,13 @@ import (
 )
 
 const (
-	//1.2.826.0.1.3344810.2.3
+	ControlTypeMatchedValuesRequest    = "1.2.826.0.1.3344810.2.3"
 	ControlTypePermissiveModifyRequest = "1.2.840.113556.1.4.1413"
 	ControlTypePaging                  = "1.2.840.113556.1.4.319"
+	ControlTypeManageDsaITRequest      = "2.16.840.1.113730.3.4.2"
+	ControlTypeSubtreeDeleteRequest    = "1.2.840.113556.1.4.805"
 
 //1.2.840.113556.1.4.473
-//1.2.840.113556.1.4.805
 //1.3.6.1.1.12
 //1.3.6.1.1.13.1
 //1.3.6.1.1.13.2
@@ -32,7 +33,6 @@ const (
 //2.16.840.1.113730.3.4.17
 //2.16.840.1.113730.3.4.18
 //2.16.840.1.113730.3.4.19
-//2.16.840.1.113730.3.4.2
 //2.16.840.1.113730.3.4.3
 //2.16.840.1.113730.3.4.4
 //2.16.840.1.113730.3.4.5
@@ -40,13 +40,16 @@ const (
 )
 
 var ControlTypeMap = map[string]string{
+	ControlTypeMatchedValuesRequest:    "MatchedValuesRequest",
 	ControlTypePermissiveModifyRequest: "PermissiveModifyRequest",
 	ControlTypePaging:                  "Paging",
+	ControlTypeManageDsaITRequest:      "ManageDsaITRequest",
+	ControlTypeSubtreeDeleteRequest:    "SubtreeDeleteRequest",
 }
 
 type Control interface {
 	GetControlType() string
-	Encode() *ber.Packet
+	Encode() (*ber.Packet, *Error)
 	String() string
 }
 
@@ -60,7 +63,7 @@ func (c *ControlString) GetControlType() string {
 	return c.ControlType
 }
 
-func (c *ControlString) Encode() (p *ber.Packet) {
+func (c *ControlString) Encode() (p *ber.Packet, err *Error) {
 	p = ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "Control")
 	p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, c.ControlType, "Control Type ("+ControlTypeMap[c.ControlType]+")"))
 	if c.Criticality {
@@ -69,7 +72,7 @@ func (c *ControlString) Encode() (p *ber.Packet) {
 	if len(c.ControlValue) != 0 {
 		p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, c.ControlValue, "Control Value"))
 	}
-	return
+	return p, nil
 }
 
 func (c *ControlString) String() string {
@@ -85,7 +88,7 @@ func (c *ControlPaging) GetControlType() string {
 	return ControlTypePaging
 }
 
-func (c *ControlPaging) Encode() (p *ber.Packet) {
+func (c *ControlPaging) Encode() (p *ber.Packet, err *Error) {
 	p = ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "Control")
 	p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, ControlTypePaging, "Control Type ("+ControlTypeMap[ControlTypePaging]+")"))
 
@@ -99,12 +102,12 @@ func (c *ControlPaging) Encode() (p *ber.Packet) {
 	p2.AppendChild(seq)
 
 	p.AppendChild(p2)
-	return
+	return p, nil
 }
 
 func (c *ControlPaging) String() string {
 	return fmt.Sprintf(
-		"Control Type: %s (%q)  Criticality: %s  PagingSize: %d  Cookie: %q",
+		"Control Type: %s (%q)  Criticality: %t  PagingSize: %d  Cookie: %q",
 		ControlTypeMap[ControlTypePaging],
 		ControlTypePaging,
 		false,
@@ -131,7 +134,7 @@ Control ::= SEQUENCE {
              criticality             BOOLEAN DEFAULT FALSE,
              controlValue            OCTET STRING OPTIONAL }
 */
-
+// DecodeControl - Decode Response controls.
 func DecodeControl(p *ber.Packet) Control {
 	ControlType := p.Children[0].Value.(string)
 	Criticality := false
@@ -184,10 +187,86 @@ func NewControlPaging(PagingSize uint32) *ControlPaging {
 	return &ControlPaging{PagingSize: PagingSize}
 }
 
-func encodeControls(Controls []Control) *ber.Packet {
+func encodeControls(Controls []Control) (*ber.Packet, *Error) {
 	p := ber.Encode(ber.ClassContext, ber.TypeConstructed, 0, nil, "Controls")
 	for _, control := range Controls {
-		p.AppendChild(control.Encode())
+		pack, err := control.Encode()
+		if err != nil {
+			return nil, err
+		}
+		p.AppendChild(pack)
 	}
-	return p
+	return p, nil
+}
+
+/************************/
+/* MatchedValuesRequest */
+/************************/
+
+func NewControlPermissiveModifyRequest(criticality bool) *ControlString {
+	return NewControlString(ControlTypePermissiveModifyRequest, criticality, "")
+}
+
+/***************/
+/* ManageDsaITRequest */
+/***************/
+
+func NewControlManageDsaITRequest(criticality bool) *ControlString {
+	return NewControlString(ControlTypeManageDsaITRequest, criticality, "")
+}
+
+/************************/
+/* SubtreeDeleteRequest */
+/************************/
+
+func NewControlSubtreeDeleteRequest(criticality bool) *ControlString {
+	return NewControlString(ControlTypeSubtreeDeleteRequest, criticality, "")
+}
+
+/************************/
+/* MatchedValuesRequest */
+/************************/
+
+type ControlMatchedValuesRequest struct {
+	Criticality bool
+	Filter      string
+}
+
+func NewControlMatchedValuesRequest(criticality bool, filter string) *ControlMatchedValuesRequest {
+	return &ControlMatchedValuesRequest{criticality, filter}
+}
+
+func (c *ControlMatchedValuesRequest) GetControlType() string {
+	return ControlTypeMatchedValuesRequest
+}
+
+func (c *ControlMatchedValuesRequest) Encode() (p *ber.Packet, err *Error) {
+	p = ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "Control")
+	p.AppendChild(
+		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
+			ber.TagOctetString, ControlTypeMatchedValuesRequest,
+			"Control Type ("+ControlTypeMap[ControlTypeMatchedValuesRequest]+")"))
+	if c.Criticality {
+		p.AppendChild(ber.NewBoolean(ber.ClassUniversal, ber.TypePrimative, ber.TagBoolean, c.Criticality, "Criticality"))
+	}
+	octetString := ber.Encode(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, nil, "Octet String")
+	simpleFilterSeq := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "SimpleFilterItem")
+	filterPacket, err := filterParse(c.Filter)
+	if err != nil {
+		return nil, err
+	}
+	simpleFilterSeq.AppendChild(filterPacket)
+	octetString.AppendChild(simpleFilterSeq)
+	p.AppendChild(octetString)
+	return p, nil
+}
+
+func (c *ControlMatchedValuesRequest) String() string {
+	return fmt.Sprintf(
+		"Control Type: %s (%q)  Criticality: %t  Filter: %s",
+		ControlTypeMap[ControlTypeMatchedValuesRequest],
+		ControlTypeMatchedValuesRequest,
+		c.Criticality,
+		c.Filter,
+	)
 }

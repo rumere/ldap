@@ -182,7 +182,11 @@ func (l *Conn) Search(SearchRequest *SearchRequest) (*SearchResult, *Error) {
 	packet.AppendChild(searchPacket)
 
 	if SearchRequest.Controls != nil && len(SearchRequest.Controls) > 0 {
-		packet.AppendChild(encodeControls(SearchRequest.Controls))
+		controls, err := encodeControls(SearchRequest.Controls)
+		if err != nil {
+			return nil, err
+		}
+		packet.AppendChild(controls)
 	}
 
 	if l.Debug {
@@ -224,7 +228,7 @@ func (l *Conn) Search(SearchRequest *SearchRequest) (*SearchResult, *Error) {
 		}
 
 		switch packet.Children[1].Tag {
-		case 4:
+		case ApplicationSearchResultEntry:
 			entry := new(Entry)
 			entry.DN = packet.Children[1].Children[0].Value.(string)
 			for _, child := range packet.Children[1].Children[1].Children {
@@ -236,7 +240,7 @@ func (l *Conn) Search(SearchRequest *SearchRequest) (*SearchResult, *Error) {
 				entry.Attributes = append(entry.Attributes, attr)
 			}
 			result.Entries = append(result.Entries, entry)
-		case 5:
+		case ApplicationSearchResultDone:
 			result_code, result_description := getLDAPResultCode(packet)
 			if result_code != 0 {
 				return result, NewError(result_code, errors.New(result_description))
@@ -247,7 +251,7 @@ func (l *Conn) Search(SearchRequest *SearchRequest) (*SearchResult, *Error) {
 				}
 			}
 			foundSearchResultDone = true
-		case 19:
+		case ApplicationSearchResultReference:
 			result.Referrals = append(result.Referrals, packet.Children[1].Children[0].Value.(string))
 		}
 	}

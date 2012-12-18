@@ -1,3 +1,7 @@
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package ldap
 
 import (
@@ -26,7 +30,11 @@ func (l *Conn) Add(addReq *AddRequest) *Error {
 	packet.AppendChild(encoded)
 
 	if addReq.Controls != nil && len(addReq.Controls) > 0 {
-		packet.AppendChild(encodeControls(addReq.Controls))
+		controls, err := encodeControls(addReq.Controls)
+		if err != nil {
+			return err
+		}
+		packet.AppendChild(controls)
 	}
 
 	if l.Debug {

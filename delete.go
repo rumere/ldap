@@ -1,3 +1,7 @@
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package ldap
 
 import (
@@ -22,7 +26,11 @@ func (l *Conn) Delete(delReq *DeleteRequest) (error *Error) {
 	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimative, ber.TagInteger, messageID, "MessageID"))
 	packet.AppendChild(ber.NewString(ber.ClassApplication, ber.TypePrimative, ApplicationDelRequest, delReq.DN, ApplicationMap[ApplicationDelRequest]))
 	if delReq.Controls != nil && len(delReq.Controls) > 0 {
-		packet.AppendChild(encodeControls(delReq.Controls))
+		controls, err := encodeControls(delReq.Controls)
+		if err != nil {
+			return err
+		}
+		packet.AppendChild(controls)
 	}
 	if l.Debug {
 		ber.PrintPacket(packet)

@@ -1,3 +1,7 @@
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package ldap
 
 import (
@@ -35,7 +39,11 @@ func (l *Conn) Compare(compareReq *CompareRequest) *Error {
 	packet.AppendChild(compPacket)
 
 	if compareReq.Controls != nil && len(compareReq.Controls) > 0 {
-		packet.AppendChild(encodeControls(compareReq.Controls))
+		controls, err := encodeControls(compareReq.Controls)
+		if err != nil {
+			return err
+		}
+		packet.AppendChild(controls)
 	}
 
 	if l.Debug {
