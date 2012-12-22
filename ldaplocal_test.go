@@ -6,7 +6,9 @@ package ldap
 
 import (
 	"fmt"
+	// "runtime/debug"
 	"testing"
+	"time"
 )
 
 var local_ldap_binddn string = "cn=directory manager"
@@ -15,6 +17,7 @@ var local_ldap_server string = "localhost"
 var local_ldap_port uint16 = 1389
 var local_base_dn string = "dc=example,dc=com"
 var local_filter []string = []string{
+	"(sn=Abb*)",
 	"(uniqueMember=*)",
 	"(|(uniqueMember=*)(sn=Abbie))",
 	"(&(objectclass=person)(cn=ab*))",
@@ -426,5 +429,116 @@ func TestLocalControlMatchedValuesRequest(t *testing.T) {
 	if err != nil {
 		t.Errorf("Delete : %s : result = %d\n", addDNs[0], err.ResultCode)
 		return
+	}
+}
+
+func TestLocalSearchWithCallback(t *testing.T) {
+	fmt.Printf("TestLocalSearchWithCallback: starting...\n")
+	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+
+	// l.Debug = true
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	defer l.Close()
+
+	err = l.Bind(local_ldap_binddn, local_ldap_passwd)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	search_request := NewSearchRequest(
+		local_base_dn,
+		ScopeWholeSubtree, DerefAlways, 0, 0, false,
+		local_filter[0],
+		local_attributes,
+		nil)
+	// ber.Debug = true
+	countResults := 0
+	cback := func(partRes *PartialSearchResult, err *Error, stopProcessing *bool) {
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		switch partRes.ApplicationResult {
+		case SearchResultEntry:
+			fmt.Println("result entry")
+			countResults++
+		case SearchResultDone:
+			fmt.Println("results done")
+		case SearchResultReference:
+			fmt.Println("result referral")
+		}
+		return
+	}
+	l.Debug = false
+	finished := make(chan bool)
+	go l.SearchWithCallback(search_request, cback, finished)
+	<-finished
+	fmt.Printf("TestLocalSearchWithCallback - go routine: %s num of entries = %d\n", search_request.Filter, countResults)
+	countResults = 0
+	l.SearchWithCallback(search_request, cback, nil)
+	fmt.Printf("TestLocalSearchWithCallback: %s num of entries = %d\n", search_request.Filter, countResults)
+}
+
+func TestLocalSearchWithCallbackAndAbandon(t *testing.T) {
+	fmt.Printf("TestLocalSearchWithCallback: starting...\n")
+	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+
+	// l.Debug = true
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	defer l.Close()
+
+	err = l.Bind(local_ldap_binddn, local_ldap_passwd)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	search_request := NewSearchRequest(
+		local_base_dn,
+		ScopeWholeSubtree, DerefAlways, 0, 0, false,
+		local_filter[0],
+		local_attributes,
+		nil)
+	// ber.Debug = true
+
+	cback := func(partRes *PartialSearchResult, err *Error, stopProcessing *bool) {
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Printf("cback Abandoning request: %d\n", partRes.MessageID)
+		err = partRes.Conn.Abandon(partRes.MessageID)
+		// time.Sleep(1 * time.Second)
+		if err != nil {
+			fmt.Println(err)
+		}
+		*stopProcessing = true
+	}
+	l.Debug = false
+	finished := make(chan bool)
+	l.SearchWithCallback(search_request, cback, finished)
+	l.SearchWithCallback(search_request, aCallBack, nil)
+	<-finished
+	time.Sleep(1 * time.Second)
+}
+
+func aCallBack(partRes *PartialSearchResult, err *Error, stopProcessing *bool) {
+	if err != nil {
+		fmt.Println(err)
+		return
+	} else {
+		fmt.Printf("aCallBack Abandoning request: %d\n", partRes.MessageID)
+		err = partRes.Conn.Abandon(partRes.MessageID)
+
+		if err != nil {
+			fmt.Println(err)
+		}
+		*stopProcessing = true
 	}
 }
