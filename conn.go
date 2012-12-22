@@ -236,8 +236,10 @@ func (l *Conn) processMessages() {
 				}
 				chanResult := l.chanResults[message_packet.MessageID]
 				if chanResult == nil {
-					fmt.Printf("Unexpected Message Result: %d\n", message_id)
-					ber.PrintPacket(message_packet.Packet)
+					fmt.Printf("Unexpected Message Result (possible Abandon): %d , MessageID: %d\n", message_id, message_packet.MessageID)
+					// TODO: Noisy when abandoning connections, as server can still send.
+					// Some sort of limited Abandon list?
+					//ber.PrintPacket(message_packet.Packet)
 				} else {
 					packetCopy := message_packet.Packet
 					go func() {
