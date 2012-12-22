@@ -26,5 +26,4 @@ TODO:
    More/better tests.
    FilterExtensibleMatch Decode
    Modify DN Requests / Responses
-   Compare Requests / Responses
    Implement Tests / Benchmarks
