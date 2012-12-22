@@ -21,17 +21,13 @@ Simple delete
 
 func (l *Conn) Delete(delReq *DeleteRequest) (error *Error) {
 	messageID := l.nextMessageID()
+	encodedDelete := ber.NewString(ber.ClassApplication, ber.TypePrimative, ApplicationDelRequest, delReq.DN, ApplicationMap[ApplicationDelRequest])
 
-	packet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Request")
-	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimative, ber.TagInteger, messageID, "MessageID"))
-	packet.AppendChild(ber.NewString(ber.ClassApplication, ber.TypePrimative, ApplicationDelRequest, delReq.DN, ApplicationMap[ApplicationDelRequest]))
-	if delReq.Controls != nil && len(delReq.Controls) > 0 {
-		controls, err := encodeControls(delReq.Controls)
-		if err != nil {
-			return err
-		}
-		packet.AppendChild(controls)
+	packet, err := requestBuildPacket(messageID, encodedDelete, delReq.Controls)
+	if err != nil {
+		return err
 	}
+
 	if l.Debug {
 		ber.PrintPacket(packet)
 	}

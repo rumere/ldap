@@ -29,21 +29,14 @@ type CompareRequest struct {
 
 func (l *Conn) Compare(compareReq *CompareRequest) *Error {
 	messageID := l.nextMessageID()
-
-	packet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Request")
-	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimative, ber.TagInteger, messageID, "MessageID"))
-	compPacket, err := encodeCompareRequest(compareReq)
+	encodedCompare, err := encodeCompareRequest(compareReq)
 	if err != nil {
 		return err
 	}
-	packet.AppendChild(compPacket)
 
-	if compareReq.Controls != nil && len(compareReq.Controls) > 0 {
-		controls, err := encodeControls(compareReq.Controls)
-		if err != nil {
-			return err
-		}
-		packet.AppendChild(controls)
+	packet, err := requestBuildPacket(messageID, encodedCompare, compareReq.Controls)
+	if err != nil {
+		return err
 	}
 
 	if l.Debug {
@@ -93,7 +86,6 @@ func (l *Conn) Compare(compareReq *CompareRequest) *Error {
 }
 
 func encodeCompareRequest(req *CompareRequest) (*ber.Packet, *Error) {
-
 	p := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ApplicationCompareRequest, nil, ApplicationMap[ApplicationCompareRequest])
 	p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, req.DN, "LDAP DN"))
 	ava, err := encodeItem([]string{req.Name, "=", req.Value})

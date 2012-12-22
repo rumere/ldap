@@ -18,23 +18,14 @@ type AddRequest struct {
 
 func (l *Conn) Add(addReq *AddRequest) *Error {
 	messageID := l.nextMessageID()
-
-	packet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Request")
-	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimative, ber.TagInteger, messageID, "MessageID"))
-	encoded, err := encodeAddRequest(addReq)
-
+	encodedAdd, err := encodeAddRequest(addReq)
 	if err != nil {
 		return err
 	}
 
-	packet.AppendChild(encoded)
-
-	if addReq.Controls != nil && len(addReq.Controls) > 0 {
-		controls, err := encodeControls(addReq.Controls)
-		if err != nil {
-			return err
-		}
-		packet.AppendChild(controls)
+	packet, err := requestBuildPacket(messageID, encodedAdd, addReq.Controls)
+	if err != nil {
+		return err
 	}
 
 	if l.Debug {

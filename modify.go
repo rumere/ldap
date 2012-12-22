@@ -74,16 +74,11 @@ func modifyTest(l *ldap.Conn){
 
 func (l *Conn) Modify(modReq *ModifyRequest) *Error {
 	messageID := l.nextMessageID()
+	encodedModify := encodeModifyRequest(modReq)
 
-	packet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Request")
-	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimative, ber.TagInteger, messageID, "MessageID"))
-	packet.AppendChild(encodeModifyRequest(modReq))
-	if modReq.Controls != nil && len(modReq.Controls) > 0 {
-		controls, err := encodeControls(modReq.Controls)
-		if err != nil {
-			return err
-		}
-		packet.AppendChild(controls)
+	packet, err := requestBuildPacket(messageID, encodedModify, modReq.Controls)
+	if err != nil {
+		return err
 	}
 
 	if l.Debug {
