@@ -14,16 +14,18 @@ Working:
       Can perform multiple search requests at the same time and return
          the results to the proper goroutine.  All requests are blocking
          requests, so the goroutine does not need special handling
-
+   Request Controls - MatchedValuesRequest, PermissiveModifyRequest,
+      ManageDsaITRequest, SubtreeDeleteRequest, Paging
+   
 Tests Implemented:
    Filter Compile / Decompile
    Local OpenDJ Tests for most Operations
    
 TODO:
-   Channel/Callback based search results.
+   Channel/Callback based search results - Done experimental
    Test to not depend on initial Directory setup
    Do something with binary attributes.
-   More/better tests.
    FilterExtensibleMatch Decode
    Modify DN Requests / Responses
    Implement Tests / Benchmarks
+   Timeouts (connect Go 1.1?), Timeout Operations.
