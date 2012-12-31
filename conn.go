@@ -12,19 +12,80 @@ import (
 	"github.com/mavricknz/asn1-ber"
 	"net"
 	"sync"
+	"time"
 )
 
-// LDAP Connection
+// Conn - LDAP Connection and also pre/post connect configuation
+//	IsTLS bool // default false
+//	IsSSL bool // default false
+//	Debug bool // default false
+//	ConnectTimeout time.Duration // default 0 no timeout (not available in 1.0)
+//	ReadTimeout    time.Duration // default 0 no timeout
+//	Network        string // default empty
+//	Addr           string // default empty
+//
+// A minimal connection...
+//	conn := new(ldap.Conn)
+//	conn.Network = "tcp"
+//	conn.Addr    = "localhost:1389"
+//
+//	conn, err := ldap.DialUsingConn(conn) // returns the same conn passed but connected.
 type Conn struct {
 	conn  net.Conn
-	isSSL bool
+	IsTLS bool
+	IsSSL bool
 	Debug bool
+
+	TlsConfig *tls.Config
 
 	chanResults        map[uint64]chan *ber.Packet
 	chanProcessMessage chan *messagePacket
 	chanMessageID      chan uint64
 
-	closeLock sync.RWMutex
+	closeLock      sync.RWMutex
+	ConnectTimeout time.Duration
+	ReadTimeout    time.Duration
+	Network        string
+	Addr           string
+}
+
+// DialUsingConn connects to the given address on the given network using net.Dial
+// and then returns a connected ldap.Conn for the connection. Provided Conn should be
+// populated with connection information.
+// Can re-connect if clear conn, chanResults, chanProcessMessage, chanMessageID.
+func DialUsingConn(conn *Conn) (*Conn, *Error) {
+	if conn.conn != nil || len(conn.chanResults) > 0 || conn.chanProcessMessage != nil || conn.chanMessageID != nil {
+		return nil, NewError(ErrorInvalidArgument,
+			errors.New("DialWithConn: Connection already setup? Can't reuse."))
+	}
+
+	if conn.IsSSL && !conn.IsTLS {
+		c, err := tls.Dial(conn.Network, conn.Addr, conn.TlsConfig)
+		if err != nil {
+			return nil, NewError(ErrorNetwork, err)
+		}
+		conn.conn = c
+	} else {
+		c, err := net.Dial(conn.Network, conn.Addr)
+		if err != nil {
+			return nil, NewError(ErrorNetwork, err)
+		}
+		conn.conn = c
+	}
+
+	conn.chanResults = map[uint64]chan *ber.Packet{}
+	conn.chanProcessMessage = make(chan *messagePacket)
+	conn.chanMessageID = make(chan uint64)
+
+	if conn.IsTLS {
+		err := conn.startTLS()
+		if err != nil {
+			return nil, NewError(ErrorNetwork, err)
+		}
+	} else {
+		conn.start()
+	}
+	return conn, nil
 }
 
 // Dial connects to the given address on the given network using net.Dial
@@ -47,7 +108,7 @@ func DialSSL(network, addr string) (*Conn, *Error) {
 		return nil, NewError(ErrorNetwork, err)
 	}
 	conn := NewConn(c)
-	conn.isSSL = true
+	conn.IsSSL = true
 
 	conn.start()
 	return conn, nil
@@ -75,7 +136,7 @@ func DialTLS(network, addr string) (*Conn, *Error) {
 func NewConn(conn net.Conn) *Conn {
 	return &Conn{
 		conn:               conn,
-		isSSL:              false,
+		IsSSL:              false,
 		Debug:              false,
 		chanResults:        map[uint64]chan *ber.Packet{},
 		chanProcessMessage: make(chan *messagePacket),
@@ -120,7 +181,7 @@ func (l *Conn) nextMessageID() (messageID uint64) {
 func (l *Conn) startTLS() *Error {
 	messageID := l.nextMessageID()
 
-	if l.isSSL {
+	if l.IsSSL {
 		return NewError(ErrorNetwork, errors.New("Already encrypted"))
 	}
 
@@ -152,7 +213,7 @@ func (l *Conn) startTLS() *Error {
 
 	if packet.Children[1].Children[0].Value.(uint64) == 0 {
 		conn := tls.Client(l.conn, nil)
-		l.isSSL = true
+		l.IsSSL = true
 		l.conn = conn
 	}
 
