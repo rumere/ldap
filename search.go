@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
+	"log"
 )
 
 const (
@@ -43,49 +44,29 @@ var DerefMap = map[int]string{
 	DerefAlways:         "DerefAlways",
 }
 
-type Entry struct {
-	DN         string
-	Attributes []*EntryAttribute
-}
-
-type EntryAttribute struct {
-	Name   string
-	Values []string
-}
-
 type SearchResult struct {
 	Entries   []*Entry
 	Referrals []string
 	Controls  []Control
 }
 
-type PartialSearchResult struct {
-	Conn              *Conn
-	MessageID         uint64
-	ApplicationResult uint8
-	Entry             *Entry
-	Referrals         []string
-	Controls          []Control
+type DiscreteSearchResult struct {
+	SearchResultType uint8
+	Entry            *Entry
+	Referrals        []string
+	Controls         []Control
 }
 
-func (e *Entry) GetAttributeValues(Attribute string) []string {
-	for _, attr := range e.Attributes {
-		if attr.Name == Attribute {
-			return attr.Values
-		}
-	}
-
-	return []string{}
+type ConnectionInfo struct {
+	Conn      *Conn
+	MessageID uint64
 }
 
-func (e *Entry) GetAttributeValue(Attribute string) string {
-	values := e.GetAttributeValues(Attribute)
-	if len(values) == 0 {
-		return ""
-	}
-	return values[0]
+type SearchResultHandler interface {
+	ProcessDiscreteResult(*DiscreteSearchResult, *ConnectionInfo) (bool, *Error)
 }
 
+// SearchRequest passed to Search functions.
 type SearchRequest struct {
 	BaseDN       string
 	Scope        int
@@ -96,6 +77,33 @@ type SearchRequest struct {
 	Filter       string
 	Attributes   []string
 	Controls     []Control
+}
+
+//NewSimpleSearchRequest only requires four parameters and defaults the
+//other returned SearchRequest values to typical values...
+//
+//	DerefAliases: NeverDerefAliases
+//	SizeLimit:    0
+//	TimeLimit:    0
+//	TypesOnly:    false
+//	Controls:     nil
+func NewSimpleSearchRequest(
+	BaseDN string,
+	Scope int,
+	Filter string,
+	Attributes []string,
+) *SearchRequest {
+	return &SearchRequest{
+		BaseDN:       BaseDN,
+		Scope:        Scope,
+		DerefAliases: NeverDerefAliases,
+		SizeLimit:    0,
+		TimeLimit:    0,
+		TypesOnly:    false,
+		Filter:       Filter,
+		Attributes:   Attributes,
+		Controls:     nil,
+	}
 }
 
 func NewSearchRequest(
@@ -119,141 +127,76 @@ func NewSearchRequest(
 	}
 }
 
-func (l *Conn) SearchWithPaging(SearchRequest *SearchRequest, PagingSize uint32) (*SearchResult, *Error) {
-	if SearchRequest.Controls == nil {
-		SearchRequest.Controls = make([]Control, 0)
-	}
+//SearchWithPaging adds a paging control to the the searchRequest, with a size of pagingSize.
+//It combines all the paged results into the returned SearchResult. It is a helper function for
+//use with servers that require paging for certain result sizes (AD?).
+//
+//It is NOT an efficent way to process huge result sets i.e. it doesn't process on a pageSize
+//number of entries, it returns the combined result.
+//
+//Controls are not included in the SearchResult as they don't make sense for a combined result
+//set
+func (l *Conn) SearchWithPaging(searchRequest *SearchRequest, pagingSize uint32) (*SearchResult, *Error) {
+	pagingControl := NewControlPaging(pagingSize)
+	searchRequest.AddControl(pagingControl)
+	allResults := new(SearchResult)
 
-	PagingControl := NewControlPaging(PagingSize)
-	SearchRequest.Controls = append(SearchRequest.Controls, PagingControl)
-	SearchResult := new(SearchResult)
-	for {
-		result, err := l.Search(SearchRequest)
-		if l.Debug {
-			fmt.Printf("Looking for Paging Control...\n")
-		}
+	for i := 0; ; i++ {
+		searchResult := new(SearchResult)
+		err := l.SearchWithHandler(searchRequest, searchResult, nil)
 		if err != nil {
-			return SearchResult, err
-		}
-		if result == nil {
-			return SearchResult, NewError(ErrorNetwork, errors.New("Packet not received"))
+			return allResults, err
 		}
 
-		for _, entry := range result.Entries {
-			SearchResult.Entries = append(SearchResult.Entries, entry)
-		}
-		for _, referral := range result.Referrals {
-			SearchResult.Referrals = append(SearchResult.Referrals, referral)
-		}
-		for _, control := range result.Controls {
-			SearchResult.Controls = append(SearchResult.Controls, control)
-		}
+		allResults.Entries = append(allResults.Entries, searchResult.Entries...)
+		allResults.Referrals = append(allResults.Referrals, searchResult.Referrals...)
+		// allResults really shouldn't have Controls as its a combinaion of multiple searches
 
-		if l.Debug {
-			fmt.Printf("Looking for Paging Control...\n")
-		}
-		paging_result := FindControl(result.Controls, ControlTypePaging)
-		if paging_result == nil {
-			PagingControl = nil
+		_, pagingResponsePacket := FindControl(searchResult.Controls, ControlTypePaging)
+		// If initial result and no paging control then server doesn't support paging
+		if pagingResponsePacket == nil && i == 0 {
 			if l.Debug {
-				fmt.Printf("Could not find paging control.  Breaking...\n")
+				fmt.Println("Requested paging but no control returned, control unsupported.")
 			}
+			return allResults, nil
+		} else if pagingResponsePacket == nil {
+			return allResults, NewError(ErrorMissingControl, errors.New("Expected paging Control, it was not found."))
+		}
+		pagingControl.SetCookie(pagingResponsePacket.(*ControlPaging).Cookie)
+		if len(pagingControl.Cookie) == 0 {
 			break
 		}
-
-		cookie := paging_result.(*ControlPaging).Cookie
-		if len(cookie) == 0 {
-			PagingControl = nil
-			if l.Debug {
-				fmt.Printf("Could not find cookie.  Breaking...\n")
-			}
-			break
-		}
-		PagingControl.SetCookie(cookie)
 	}
-
-	if PagingControl != nil {
-		if l.Debug {
-			fmt.Printf("Abandoning Paging...\n")
-		}
-		PagingControl.PagingSize = 0
-		l.Search(SearchRequest)
-	}
-
-	return SearchResult, nil
+	return allResults, nil
 }
 
-func (l *Conn) Search(SearchRequest *SearchRequest) (*SearchResult, *Error) {
-	messageID := l.nextMessageID()
-	searchPacket, err := encodeSearchRequest(SearchRequest)
-	if err != nil {
-		return nil, err
+//ProcessDiscreteResult handles an individual result from a server. Member of the
+//SearchResultHandler interface. Results are placed into a SearchResult.
+func (sr *SearchResult) ProcessDiscreteResult(dsr *DiscreteSearchResult, connInfo *ConnectionInfo) (stopProcessing bool, err *Error) {
+	switch dsr.SearchResultType {
+	case SearchResultEntry:
+		sr.Entries = append(sr.Entries, dsr.Entry)
+	case SearchResultDone:
+		if dsr.Controls != nil {
+			sr.Controls = append(sr.Controls, dsr.Controls...)
+		}
+	case SearchResultReference:
+		sr.Referrals = append(sr.Referrals, dsr.Referrals...)
 	}
+	return false, nil
+}
 
-	packet, err := requestBuildPacket(messageID, searchPacket, SearchRequest.Controls)
-	if err != nil {
-		return nil, err
-	}
-
-	if l.Debug {
-		ber.PrintPacket(packet)
-	}
-
-	channel, err := l.sendMessage(packet)
-	if err != nil {
-		return nil, err
-	}
-	if channel == nil {
-		return nil, NewError(ErrorNetwork, errors.New("Could not send message"))
-	}
-	defer l.finishMessage(messageID)
-
+//Search is a blocking search. nil error on success.
+func (l *Conn) Search(searchRequest *SearchRequest) (*SearchResult, *Error) {
 	result := &SearchResult{
 		Entries:   make([]*Entry, 0),
 		Referrals: make([]string, 0),
 		Controls:  make([]Control, 0)}
 
-Search:
-	for {
-		if l.Debug {
-			fmt.Printf("%d: waiting for response\n", messageID)
-		}
-		packet = <-channel
-		if l.Debug {
-			fmt.Printf("%d: got response %p\n", messageID, packet)
-		}
-		if packet == nil {
-			return nil, NewError(ErrorNetwork, errors.New("Could not retrieve message"))
-		}
-
-		if l.Debug {
-			if err := addLDAPDescriptions(packet); err != nil {
-				return nil, NewError(ErrorDebugging, err)
-			}
-			ber.PrintPacket(packet)
-		}
-
-		partialSearchResult, err := decodeSearchResponse(packet)
-		if err != nil {
-			return result, err
-		}
-
-		switch partialSearchResult.ApplicationResult {
-		case SearchResultEntry:
-			result.Entries = append(result.Entries, partialSearchResult.Entry)
-		case SearchResultDone:
-			if partialSearchResult.Controls != nil {
-				result.Controls = append(result.Controls, partialSearchResult.Controls...)
-			}
-			break Search
-		case SearchResultReference:
-			result.Referrals = append(result.Referrals, partialSearchResult.Referrals...)
-		}
+	err := l.SearchWithHandler(searchRequest, result, nil)
+	if err != nil {
+		return result, err
 	}
-	if l.Debug {
-		fmt.Printf("%d: returning\n", messageID)
-	}
-
 	return result, nil
 }
 
@@ -278,6 +221,7 @@ func encodeSearchRequest(req *SearchRequest) (*ber.Packet, *Error) {
 	return searchRequest, nil
 }
 
+//AddControl adds the provided control to a SearchRequest
 func (req *SearchRequest) AddControl(control Control) {
 	if req.Controls == nil {
 		req.Controls = make([]Control, 0)
@@ -285,133 +229,12 @@ func (req *SearchRequest) AddControl(control Control) {
 	req.Controls = append(req.Controls, control)
 }
 
-// Experimental - not sure of API.
-// Process the searchRequest using a callback. Uses less memory than Search(...).
-// Can process individual results as they are returned.
-// stopProcessing - indicates either way to stop/cleanup as request will not continue
-// finished - optional channel for if calling as go routine.
-// Example callback.
-//
-//countResults := 0
-//cback := func(partRes *PartialSearchResult, err *Error, stopProcessing *bool) {
-//	if err != nil {
-//		fmt.Println(err)
-//		return
-//	}
-
-//	switch partRes.ApplicationResult {
-//	case SearchResultEntry:
-//		fmt.Println("result entry")
-//		countResults++
-//	case SearchResultDone:
-//		fmt.Println("results done")
-//	case SearchResultReference:
-//		fmt.Println("result referral")
-//	}
-//	return
-//}
-//finished := make(chan bool)
-//go l.SearchWithCallback(search_request, cback, finished)
-//<-finished
-//fmt.Println(countResults)
-//// or sequential
-//countResults = 0
-//l.SearchWithCallback(search_request, cback, nil)
-//fmt.Println(countResults)
-func (l *Conn) SearchWithCallback(
-	searchRequest *SearchRequest,
-	callback func(partialSearchResult *PartialSearchResult, error *Error, stopProcessing *bool),
-	finished chan<- bool,
-) {
-
-	messageID := l.nextMessageID()
-	stopProcessing := true // anything before read loop is an err.
-	searchPacket, err := encodeSearchRequest(searchRequest)
-	if err != nil {
-		callback(nil, err, &stopProcessing)
-		go sendFinished(finished)
-		return
-	}
-
-	packet, err := requestBuildPacket(messageID, searchPacket, searchRequest.Controls)
-	if err != nil {
-		callback(nil, err, &stopProcessing)
-		go sendFinished(finished)
-		return
-	}
-
-	if l.Debug {
-		ber.PrintPacket(packet)
-	}
-
-	channel, err := l.sendMessage(packet)
-	if err != nil {
-		callback(nil, err, &stopProcessing)
-		go sendFinished(finished)
-		return
-	}
-	if channel == nil {
-		callback(nil, NewError(ErrorNetwork, errors.New("Could not send message")), &stopProcessing)
-		go sendFinished(finished)
-		return
-	}
-	defer l.finishMessage(messageID)
-	stopProcessing = false
-	for {
-		if l.Debug {
-			fmt.Printf("%d: waiting for response\n", messageID)
-		}
-		packet = <-channel
-		if l.Debug {
-			fmt.Printf("%d: got response %p\n", messageID, packet)
-		}
-		if packet == nil {
-			stopProcessing = true
-			callback(nil, NewError(ErrorNetwork, errors.New("Could not retrieve message")), &stopProcessing)
-			go sendFinished(finished)
-			return
-		}
-
-		if l.Debug {
-			if err := addLDAPDescriptions(packet); err != nil {
-				stopProcessing = true
-				callback(nil, NewError(ErrorDebugging, err), &stopProcessing)
-				go sendFinished(finished)
-				return
-			}
-			ber.PrintPacket(packet)
-		}
-
-		partSearchResult, err := decodeSearchResponse(packet)
-		if err != nil {
-			stopProcessing = true
-			callback(nil, err, &stopProcessing)
-			go sendFinished(finished)
-			return
-		}
-		partSearchResult.Conn = l
-		partSearchResult.MessageID = messageID
-		callback(partSearchResult, err, &stopProcessing)
-		if partSearchResult.ApplicationResult == SearchResultDone || stopProcessing {
-			break
-		}
-	}
-	go sendFinished(finished)
-	return
-}
-
-func sendFinished(fin chan<- bool) {
-	if fin != nil {
-		fin <- true
-	}
-}
-
-// SearchResult decode to Entry,Controls,Referral
-func decodeSearchResponse(packet *ber.Packet) (partialSearchResult *PartialSearchResult, err *Error) {
-	partialSearchResult = new(PartialSearchResult)
+// SearchResult decoded to Entry,Controls,Referral
+func decodeSearchResponse(packet *ber.Packet) (discreteSearchResult *DiscreteSearchResult, err *Error) {
+	discreteSearchResult = new(DiscreteSearchResult)
 	switch packet.Children[1].Tag {
 	case SearchResultEntry:
-		partialSearchResult.ApplicationResult = SearchResultEntry
+		discreteSearchResult.SearchResultType = SearchResultEntry
 		entry := new(Entry)
 		entry.DN = packet.Children[1].Children[0].Value.(string)
 		for _, child := range packet.Children[1].Children[1].Children {
@@ -422,29 +245,132 @@ func decodeSearchResponse(packet *ber.Packet) (partialSearchResult *PartialSearc
 			}
 			entry.Attributes = append(entry.Attributes, attr)
 		}
-		partialSearchResult.Entry = entry
-		return partialSearchResult, nil
+		discreteSearchResult.Entry = entry
+		return discreteSearchResult, nil
 	case SearchResultDone:
-		partialSearchResult.ApplicationResult = SearchResultDone
+		discreteSearchResult.SearchResultType = SearchResultDone
 		result_code, result_description := getLDAPResultCode(packet)
 		if result_code != 0 {
-			return partialSearchResult, NewError(result_code, errors.New(result_description))
+			return discreteSearchResult, NewError(result_code, errors.New(result_description))
 		}
 
 		if len(packet.Children) == 3 {
 			controls := make([]Control, 0)
 			for _, child := range packet.Children[2].Children {
-				controls = append(controls, DecodeControl(child))
+				// child.Children[0].Value.(string) = control oid
+				decodeFunc, present := ControlDecodeMap[child.Children[0].Value.(string)]
+				if present {
+					c, _ := decodeFunc(child)
+					controls = append(controls, c)
+				} else {
+					// not fatal but definately a warning
+					log.Println("Couldn't decode : " + child.Children[0].Value.(string))
+				}
 			}
-			partialSearchResult.Controls = controls
+			discreteSearchResult.Controls = controls
 		}
-		return partialSearchResult, nil
+		return discreteSearchResult, nil
 	case SearchResultReference:
-		partialSearchResult.ApplicationResult = SearchResultReference
+		discreteSearchResult.SearchResultType = SearchResultReference
 		for ref := range packet.Children[1].Children {
-			partialSearchResult.Referrals = append(partialSearchResult.Referrals, packet.Children[1].Children[ref].Value.(string))
+			discreteSearchResult.Referrals = append(discreteSearchResult.Referrals, packet.Children[1].Children[ref].Value.(string))
 		}
-		return partialSearchResult, nil
+		return discreteSearchResult, nil
 	}
 	return nil, NewError(ErrorDecoding, errors.New("Couldn't decode search result."))
+}
+
+func sendError(errChannel chan<- *Error, err *Error) {
+	if errChannel != nil {
+		errChannel <- err
+	}
+}
+
+//SearchWithHandler is the workhorse. Sends requests, decodes results and passes
+//on to SearchResultHandlers to process.
+//	SearchResultHandler, an interface, implemeneted by SearchResult.
+//	Handles the discreteSearchResults. Can provide own implemented to work on
+//	a result by result basis.
+//	errorChan - if nil then blocking, else *Error returned via channel upon completion.
+//	returns *Error if blocking.
+func (l *Conn) SearchWithHandler(
+	searchRequest *SearchRequest,
+	resultHandler SearchResultHandler,
+	errorChan chan<- *Error,
+) *Error {
+	messageID := l.nextMessageID()
+	searchPacket, err := encodeSearchRequest(searchRequest)
+
+	if err != nil {
+		go sendError(errorChan, err)
+		return err
+	}
+
+	packet, err := requestBuildPacket(messageID, searchPacket, searchRequest.Controls)
+	if err != nil {
+		go sendError(errorChan, err)
+		return err
+	}
+
+	if l.Debug {
+		ber.PrintPacket(packet)
+	}
+
+	channel, err := l.sendMessage(packet)
+	if err != nil {
+		go sendError(errorChan, err)
+		return err
+	}
+	if channel == nil {
+		err = NewError(ErrorNetwork, errors.New("Could not send message"))
+		go sendError(errorChan, err)
+		return err
+	}
+	defer l.finishMessage(messageID)
+
+	connectionInfo := &ConnectionInfo{
+		Conn:      l,
+		MessageID: messageID,
+	}
+
+	for {
+		if l.Debug {
+			fmt.Printf("%d: waiting for response\n", messageID)
+		}
+		packet = <-channel
+		if l.Debug {
+			fmt.Printf("%d: got response %p\n", messageID, packet)
+		}
+		if packet == nil {
+			err = NewError(ErrorNetwork, errors.New("Could not retrieve message"))
+			go sendError(errorChan, err)
+			return err
+		}
+
+		if l.Debug {
+			if err := addLDAPDescriptions(packet); err != nil {
+				err = NewError(ErrorDebugging, err)
+				go sendError(errorChan, err)
+				return err
+			}
+			ber.PrintPacket(packet)
+		}
+
+		discreteSearchResult, err := decodeSearchResponse(packet)
+		if err != nil {
+			go sendError(errorChan, err)
+			return err
+		}
+
+		stop, err := resultHandler.ProcessDiscreteResult(discreteSearchResult, connectionInfo)
+		if err != nil {
+			go sendError(errorChan, err)
+			return err
+		}
+		if discreteSearchResult.SearchResultType == SearchResultDone || stop {
+			break
+		}
+	}
+	go sendError(errorChan, nil)
+	return nil
 }
