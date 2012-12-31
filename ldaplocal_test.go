@@ -8,7 +8,7 @@ import (
 	"fmt"
 	// "runtime/debug"
 	"testing"
-	"time"
+	//"time"
 )
 
 var local_ldap_binddn string = "cn=directory manager"
@@ -102,7 +102,6 @@ func TestLocalSearch(t *testing.T) {
 		return
 	}
 	fmt.Printf("TestLocalSearch: %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
-	//fmt.Printf("TestSearch: num of entries = %d\n\n",  len(sr.Entries))
 }
 
 func TestLocalSearchWithPaging(t *testing.T) {
@@ -114,7 +113,7 @@ func TestLocalSearchWithPaging(t *testing.T) {
 	}
 	defer l.Close()
 
-	err = l.Bind("", "")
+	err = l.Bind(local_ldap_binddn, local_ldap_passwd)
 	if err != nil {
 		t.Errorf(err.Error())
 		return
@@ -123,7 +122,7 @@ func TestLocalSearchWithPaging(t *testing.T) {
 	search_request := NewSearchRequest(
 		local_base_dn,
 		ScopeWholeSubtree, DerefAlways, 0, 0, false,
-		local_filter[1],
+		local_filter[3],
 		local_attributes,
 		nil)
 	sr, err := l.SearchWithPaging(search_request, 5)
@@ -432,8 +431,37 @@ func TestLocalControlMatchedValuesRequest(t *testing.T) {
 	}
 }
 
-func TestLocalSearchWithCallback(t *testing.T) {
+type counter struct {
+	EntryCount          int
+	ReferenceCount      int
+	AbandonAtEntryCount int
+}
+
+func (c *counter) ProcessDiscreteResult(sr *DiscreteSearchResult, connInfo *ConnectionInfo) (stopProcessing bool, err *Error) {
+	switch sr.SearchResultType {
+	case SearchResultEntry:
+		fmt.Println("result entry")
+		c.EntryCount++
+		if c.AbandonAtEntryCount != 0 {
+			if c.EntryCount == c.AbandonAtEntryCount {
+				fmt.Printf("Abandoning at request: %d\n", connInfo.MessageID)
+				err = connInfo.Conn.Abandon(connInfo.MessageID)
+				// While we are abandoning the results its not an error in this case.
+				return true, nil
+			}
+		}
+	case SearchResultDone:
+		fmt.Println("results done")
+	case SearchResultReference:
+		fmt.Println("result referral")
+		c.ReferenceCount++
+	}
+	return false, nil
+}
+
+func TestLocalSearchWithHandler(t *testing.T) {
 	fmt.Printf("TestLocalSearchWithCallback: starting...\n")
+
 	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
 
 	// l.Debug = true
@@ -454,37 +482,54 @@ func TestLocalSearchWithCallback(t *testing.T) {
 		local_filter[0],
 		local_attributes,
 		nil)
-	// ber.Debug = true
-	countResults := 0
-	cback := func(partRes *PartialSearchResult, err *Error, stopProcessing *bool) {
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
 
-		switch partRes.ApplicationResult {
-		case SearchResultEntry:
-			fmt.Println("result entry")
-			countResults++
-		case SearchResultDone:
-			fmt.Println("results done")
-		case SearchResultReference:
-			fmt.Println("result referral")
-		}
+	l.Debug = false
+
+	// Blocking
+	fmt.Println("Blocking version...")
+	resultCounter := new(counter)
+	err = l.SearchWithHandler(search_request, resultCounter, nil)
+	if err != nil {
+		t.Errorf(err.Error())
 		return
 	}
-	l.Debug = false
-	finished := make(chan bool)
-	go l.SearchWithCallback(search_request, cback, finished)
-	<-finished
-	fmt.Printf("TestLocalSearchWithCallback - go routine: %s num of entries = %d\n", search_request.Filter, countResults)
-	countResults = 0
-	l.SearchWithCallback(search_request, cback, nil)
-	fmt.Printf("TestLocalSearchWithCallback: %s num of entries = %d\n", search_request.Filter, countResults)
+	fmt.Printf("TestLocalSearchWithCallback: %s entries = %d, Referrals = %d\n",
+		search_request.Filter, resultCounter.EntryCount, resultCounter.ReferenceCount)
+
+	// Non-Blocking
+	fmt.Println("Non-Blocking version...")
+	resultChan := make(chan *Error)
+	resultCounter = new(counter)
+	go l.SearchWithHandler(search_request, resultCounter, resultChan)
+	fmt.Println("do stuff ...")
+	err = <-resultChan
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	fmt.Printf("TestLocalSearchWithCallback - go routine: %s entries = %d, Referrals = %d\n",
+		search_request.Filter, resultCounter.EntryCount, resultCounter.ReferenceCount)
+
+	// TODO blocking + abandon non-trival version.
+
+	// Non-Blocking + Abandoning
+	fmt.Println("Non-Blocking + Abandon version...")
+	resultChan = make(chan *Error)
+	resultCounter = new(counter)
+	resultCounter.AbandonAtEntryCount = 4
+	go l.SearchWithHandler(search_request, resultCounter, resultChan)
+	err = <-resultChan
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	fmt.Printf("TestLocalSearchWithCallback - go routine: %s entries = %d, Referrals = %d\n",
+		search_request.Filter, resultCounter.EntryCount, resultCounter.ReferenceCount)
 }
 
-func TestLocalSearchWithCallbackAndAbandon(t *testing.T) {
-	fmt.Printf("TestLocalSearchWithCallback: starting...\n")
+func TestLocalSearchPagingWithHandler(t *testing.T) {
+	fmt.Printf("TestLocalSearchPagingWithHandler: starting...\n")
+
 	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
 
 	// l.Debug = true
@@ -505,40 +550,109 @@ func TestLocalSearchWithCallbackAndAbandon(t *testing.T) {
 		local_filter[0],
 		local_attributes,
 		nil)
-	// ber.Debug = true
 
-	cback := func(partRes *PartialSearchResult, err *Error, stopProcessing *bool) {
+	l.Debug = false
+	pagingControl := NewControlPaging(2)
+	search_request.Controls = append(search_request.Controls, pagingControl)
+
+	for {
+		sr := new(SearchResult)
+		err = l.SearchWithHandler(search_request, sr, nil)
 		if err != nil {
-			fmt.Println(err)
+			t.Errorf(err.Error())
 			return
 		}
-		fmt.Printf("cback Abandoning request: %d\n", partRes.MessageID)
-		err = partRes.Conn.Abandon(partRes.MessageID)
-		// time.Sleep(1 * time.Second)
-		if err != nil {
-			fmt.Println(err)
+		_, pagingResponsePacket := FindControl(sr.Controls, ControlTypePaging)
+		if pagingResponsePacket == nil {
+			t.Errorf("Expected Paging Control.")
 		}
-		*stopProcessing = true
+		pagingControl.Cookie = pagingResponsePacket.(*ControlPaging).Cookie
+		ReplaceControl(search_request.Controls, pagingControl)
+		fmt.Printf("TestLocalSearchPagingWithHandler: %s entries = %d, Referrals = %d\n",
+			search_request.Filter, len(sr.Entries), len(sr.Referrals))
+		if len(pagingControl.Cookie) == 0 {
+			return
+		}
 	}
-	l.Debug = false
-	finished := make(chan bool)
-	l.SearchWithCallback(search_request, cback, finished)
-	l.SearchWithCallback(search_request, aCallBack, nil)
-	<-finished
-	time.Sleep(1 * time.Second)
 }
 
-func aCallBack(partRes *PartialSearchResult, err *Error, stopProcessing *bool) {
-	if err != nil {
-		fmt.Println(err)
-		return
-	} else {
-		fmt.Printf("aCallBack Abandoning request: %d\n", partRes.MessageID)
-		err = partRes.Conn.Abandon(partRes.MessageID)
+func TestLocalConnAndSearch(t *testing.T) {
+	fmt.Printf("TestLocalConnAndSearch: starting...\n")
+	conn := new(Conn)
+	conn.Network = "tcp"
+	conn.Addr = fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port)
+	fmt.Println(conn)
+	l, err := DialUsingConn(conn)
 
-		if err != nil {
-			fmt.Println(err)
-		}
-		*stopProcessing = true
+	// l.Debug = true
+	if err != nil {
+		t.Errorf(err.Error())
+		return
 	}
+	defer l.Close()
+
+	err = l.Bind(local_ldap_binddn, local_ldap_passwd)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	search_request := NewSimpleSearchRequest(
+		local_base_dn,
+		ScopeWholeSubtree,
+		local_filter[0],
+		local_attributes,
+	)
+	// ber.Debug = true
+	sr, err := l.Search(search_request)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	fmt.Printf("TestLocalSearch: %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
+}
+
+func TestLocalOrderedSearch(t *testing.T) {
+	fmt.Printf("TestLocalOrderedSearch: starting...\n")
+	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+
+	// l.Debug = true
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	defer l.Close()
+
+	err = l.Bind(local_ldap_binddn, local_ldap_passwd)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	search_request := NewSimpleSearchRequest(
+		local_base_dn,
+		ScopeWholeSubtree,
+		local_filter[3],
+		local_attributes,
+	)
+
+	serverSideSortAttrRuleOrder := ServerSideSortAttrRuleOrder{
+		AttributeName: "cn",
+		OrderingRule:  "",
+		ReverseOrder:  false,
+	}
+	sortKeyList := make([]ServerSideSortAttrRuleOrder, 0, 1)
+	sortKeyList = append(sortKeyList, serverSideSortAttrRuleOrder)
+	sortControl := NewControlServerSideSortRequest(sortKeyList, true)
+	fmt.Println(sortControl.String())
+	search_request.AddControl(sortControl)
+	l.Debug = false
+	sr, err := l.Search(search_request)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	_, sssResponse := FindControl(sr.Controls, ControlTypeServerSideSortResponse)
+	if sssResponse != nil {
+		fmt.Println(sssResponse.String())
+	}
+	fmt.Printf("TestLocalSearch: %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
 }
