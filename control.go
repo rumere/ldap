@@ -6,6 +6,8 @@
 package ldap
 
 import (
+	//"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 )
@@ -16,6 +18,10 @@ const (
 	ControlTypePaging                  = "1.2.840.113556.1.4.319"
 	ControlTypeManageDsaITRequest      = "2.16.840.1.113730.3.4.2"
 	ControlTypeSubtreeDeleteRequest    = "1.2.840.113556.1.4.805"
+	ControlTypeNoOpRequest             = "1.3.6.1.4.1.4203.1.10.2"
+
+	ControlTypeServerSideSortRequest  = "1.2.840.113556.1.4.473"
+	ControlTypeServerSideSortResponse = "1.2.840.113556.1.4.474"
 
 //1.2.840.113556.1.4.473
 //1.3.6.1.1.12
@@ -26,7 +32,6 @@ const (
 //1.3.6.1.4.1.42.2.27.9.5.2
 //1.3.6.1.4.1.42.2.27.9.5.8
 //1.3.6.1.4.1.4203.1.10.1
-//1.3.6.1.4.1.4203.1.10.2
 //1.3.6.1.4.1.7628.5.101.1
 //2.16.840.1.113730.3.4.12
 //2.16.840.1.113730.3.4.16
@@ -45,11 +50,20 @@ var ControlTypeMap = map[string]string{
 	ControlTypePaging:                  "Paging",
 	ControlTypeManageDsaITRequest:      "ManageDsaITRequest",
 	ControlTypeSubtreeDeleteRequest:    "SubtreeDeleteRequest",
+	ControlTypeNoOpRequest:             "NoOpRequest",
+	ControlTypeServerSideSortRequest:   "ServerSideSortRequest",
+	ControlTypeServerSideSortResponse:  "ServerSideSortResponse",
 }
 
+var ControlDecodeMap = map[string]func(p *ber.Packet) (Control, *Error){
+	ControlTypeServerSideSortResponse: NewControlServerSideSortResponse,
+	ControlTypePaging:                 NewControlPagingFromPacket,
+}
+
+// Control Interface
 type Control interface {
-	GetControlType() string
 	Encode() (*ber.Packet, *Error)
+	GetControlType() string
 	String() string
 }
 
@@ -57,6 +71,15 @@ type ControlString struct {
 	ControlType  string
 	Criticality  bool
 	ControlValue string
+}
+
+func NewControlStringFromPacket(p *ber.Packet) (Control, *Error) {
+	controlType, criticality, value := decodeControlTypeAndCrit(p)
+	c := new(ControlString)
+	c.ControlType = controlType
+	c.Criticality = criticality
+	c.ControlValue = value.Value.(string)
+	return c, nil
 }
 
 func (c *ControlString) GetControlType() string {
@@ -82,6 +105,31 @@ func (c *ControlString) String() string {
 type ControlPaging struct {
 	PagingSize uint32
 	Cookie     []byte
+}
+
+func NewControlPaging(PagingSize uint32) *ControlPaging {
+	return &ControlPaging{PagingSize: PagingSize}
+}
+
+func NewControlPagingFromPacket(p *ber.Packet) (Control, *Error) {
+	_, _, value := decodeControlTypeAndCrit(p)
+	value.Description += " (Paging)"
+	c := new(ControlPaging)
+
+	if value.Value != nil {
+		value_children := ber.DecodePacket(value.Data.Bytes())
+		value.Data.Truncate(0)
+		value.Value = nil
+		value.AppendChild(value_children)
+	}
+	value = value.Children[0]
+	value.Description = "Search Control Value"
+	value.Children[0].Description = "Paging Size"
+	value.Children[1].Description = "Cookie"
+	c.PagingSize = uint32(value.Children[0].Value.(uint64))
+	c.Cookie = value.Children[1].Data.Bytes()
+	value.Children[1].Value = c.Cookie
+	return c, nil
 }
 
 func (c *ControlPaging) GetControlType() string {
@@ -119,60 +167,76 @@ func (c *ControlPaging) SetCookie(Cookie []byte) {
 	c.Cookie = Cookie
 }
 
-func FindControl(Controls []Control, ControlType string) Control {
-	for _, c := range Controls {
-		if c.GetControlType() == ControlType {
-			return c
+func FindControl(controls []Control, controlType string) (position int, control Control) {
+	for pos, c := range controls {
+		if c.GetControlType() == controlType {
+			return pos, c
 		}
 	}
-	return nil
+	return -1, nil
 }
 
-/*
-Control ::= SEQUENCE {
-             controlType             LDAPOID,
-             criticality             BOOLEAN DEFAULT FALSE,
-             controlValue            OCTET STRING OPTIONAL }
-*/
-// DecodeControl - Decode Response controls.
-func DecodeControl(p *ber.Packet) Control {
-	ControlType := p.Children[0].Value.(string)
-	Criticality := false
-
-	p.Children[0].Description = "Control Type (" + ControlTypeMap[ControlType] + ")"
-	value := p.Children[1]
-	if len(p.Children) == 3 {
-		value = p.Children[2]
-		p.Children[1].Description = "Criticality"
-		Criticality = p.Children[1].Value.(bool)
-	}
-
-	value.Description = "Control Value"
-	/* Special cases */
-	switch ControlType {
-	case ControlTypePaging:
-		value.Description += " (Paging)"
-		c := new(ControlPaging)
-		if value.Value != nil {
-			value_children := ber.DecodePacket(value.Data.Bytes())
-			value.Data.Truncate(0)
-			value.Value = nil
-			value.AppendChild(value_children)
-		}
-		value = value.Children[0]
-		value.Description = "Search Control Value"
-		value.Children[0].Description = "Paging Size"
-		value.Children[1].Description = "Cookie"
-		c.PagingSize = uint32(value.Children[0].Value.(uint64))
-		c.Cookie = value.Children[1].Data.Bytes()
-		value.Children[1].Value = c.Cookie
+func ReplaceControl(controls []Control, control Control) (oldControl Control) {
+	ControlType := control.GetControlType()
+	pos, c := FindControl(controls, ControlType)
+	if c != nil {
+		controls[pos] = control
 		return c
 	}
-	c := new(ControlString)
-	c.ControlType = ControlType
-	c.Criticality = Criticality
-	c.ControlValue = value.Value.(string)
-	return c
+	controls = append(controls, control)
+	return control
+}
+
+///*
+//Control ::= SEQUENCE {
+//             controlType             LDAPOID,
+//             criticality             BOOLEAN DEFAULT FALSE,
+//             controlValue            OCTET STRING OPTIONAL }
+//*/
+//// DecodeControl - Decode Response controls.
+//func DecodeControl(p *ber.Packet) Control {
+//	controlType, criticality, value := decodeControlTypeAndCrit(p)
+
+//	/* Special cases */
+//	switch controlType {
+//	case ControlTypePaging:
+//		value.Description += " (Paging)"
+//		c := new(ControlPaging)
+//		if value.Value != nil {
+//			value_children := ber.DecodePacket(value.Data.Bytes())
+//			value.Data.Truncate(0)
+//			value.Value = nil
+//			value.AppendChild(value_children)
+//		}
+//		value = value.Children[0]
+//		value.Description = "Search Control Value"
+//		value.Children[0].Description = "Paging Size"
+//		value.Children[1].Description = "Cookie"
+//		c.PagingSize = uint32(value.Children[0].Value.(uint64))
+//		c.Cookie = value.Children[1].Data.Bytes()
+//		value.Children[1].Value = c.Cookie
+//		return c
+//	}
+//	c := new(ControlString)
+//	c.ControlType = controlType
+//	c.Criticality = criticality
+//	c.ControlValue = value.Value.(string)
+//	return c
+//}
+
+func decodeControlTypeAndCrit(p *ber.Packet) (controlType string, criticality bool, value *ber.Packet) {
+	controlType = p.Children[0].Value.(string)
+	p.Children[0].Description = "Control Type (" + ControlTypeMap[controlType] + ")"
+	criticality = false
+	if len(p.Children) == 3 {
+		criticality = p.Children[1].Value.(bool)
+		p.Children[1].Description = "Criticality"
+		value = p.Children[2]
+	} else {
+		value = p.Children[1]
+	}
+	value.Description = "Control Value"
+	return
 }
 
 func NewControlString(ControlType string, Criticality bool, ControlValue string) *ControlString {
@@ -181,10 +245,6 @@ func NewControlString(ControlType string, Criticality bool, ControlValue string)
 		Criticality:  Criticality,
 		ControlValue: ControlValue,
 	}
-}
-
-func NewControlPaging(PagingSize uint32) *ControlPaging {
-	return &ControlPaging{PagingSize: PagingSize}
 }
 
 func encodeControls(Controls []Control) (*ber.Packet, *Error) {
@@ -223,6 +283,14 @@ func NewControlSubtreeDeleteRequest(criticality bool) *ControlString {
 	return NewControlString(ControlTypeSubtreeDeleteRequest, criticality, "")
 }
 
+/***************/
+/* NoOpRequest */
+/***************/
+
+func NewControlNoOpRequest() *ControlString {
+	return NewControlString(ControlTypeNoOpRequest, true, "")
+}
+
 /************************/
 /* MatchedValuesRequest */
 /************************/
@@ -236,12 +304,16 @@ func NewControlMatchedValuesRequest(criticality bool, filter string) *ControlMat
 	return &ControlMatchedValuesRequest{criticality, filter}
 }
 
+func (c *ControlMatchedValuesRequest) Decode(p *ber.Packet) (*Control, *Error) {
+	return nil, NewError(ErrorDecoding, errors.New("Decode of Control unsupported."))
+}
+
 func (c *ControlMatchedValuesRequest) GetControlType() string {
 	return ControlTypeMatchedValuesRequest
 }
 
 func (c *ControlMatchedValuesRequest) Encode() (p *ber.Packet, err *Error) {
-	p = ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "Control")
+	p = ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "ControlMatchedValuesRequest")
 	p.AppendChild(
 		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
 			ber.TagOctetString, ControlTypeMatchedValuesRequest,
@@ -268,5 +340,167 @@ func (c *ControlMatchedValuesRequest) String() string {
 		ControlTypeMatchedValuesRequest,
 		c.Criticality,
 		c.Filter,
+	)
+}
+
+/*************************/
+/* ServerSideSortRequest */
+/*************************/
+
+/*
+SortKeyList ::= SEQUENCE OF SEQUENCE {
+                 attributeType   AttributeDescription,
+                 orderingRule    [0] MatchingRuleId OPTIONAL,
+                 reverseOrder    [1] BOOLEAN DEFAULT FALSE }
+
+*/
+
+type ServerSideSortAttrRuleOrder struct {
+	AttributeName string
+	OrderingRule  string
+	ReverseOrder  bool
+}
+
+type ControlServerSideSortRequest struct {
+	SortKeyList []ServerSideSortAttrRuleOrder
+	Criticality bool
+}
+
+func NewControlServerSideSortRequest(sortKeyList []ServerSideSortAttrRuleOrder, criticality bool) *ControlServerSideSortRequest {
+	return &ControlServerSideSortRequest{sortKeyList, criticality}
+}
+
+func (c *ControlServerSideSortRequest) Decode(p *ber.Packet) (*Control, *Error) {
+	return nil, NewError(ErrorDecoding, errors.New("Decode of Control unsupported."))
+}
+
+func (c *ControlServerSideSortRequest) GetControlType() string {
+	return ControlTypeServerSideSortRequest
+}
+
+func (c *ControlServerSideSortRequest) Encode() (p *ber.Packet, err *Error) {
+	p = ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "ControlServerSideSortRequest")
+	p.AppendChild(
+		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
+			ber.TagOctetString, ControlTypeServerSideSortRequest,
+			"Control Type ("+ControlTypeMap[ControlTypeServerSideSortRequest]+")"))
+	if c.Criticality {
+		p.AppendChild(ber.NewBoolean(ber.ClassUniversal, ber.TypePrimative, ber.TagBoolean, c.Criticality, "Criticality"))
+	}
+	octetString := ber.Encode(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, nil, "Octet String")
+	seqSortKeyLists := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "SortKeyLists")
+
+	for _, sortKey := range c.SortKeyList {
+		seqKey := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "SortKey")
+		seqKey.AppendChild(
+			ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, sortKey.AttributeName, "AttributeDescription"),
+		)
+		if len(sortKey.OrderingRule) > 0 {
+			seqKey.AppendChild(
+				ber.NewString(ber.ClassUniversal, ber.TypePrimative, 0, sortKey.OrderingRule, "OrderingRule"),
+			)
+		}
+		seqKey.AppendChild(
+			ber.NewBoolean(ber.ClassUniversal, ber.TypePrimative, 1, sortKey.ReverseOrder, "ReverseOrder"),
+		)
+		seqSortKeyLists.AppendChild(seqKey)
+	}
+	octetString.AppendChild(seqSortKeyLists)
+	p.AppendChild(octetString)
+	return p, nil
+}
+
+func (c *ControlServerSideSortRequest) String() string {
+	ctext := fmt.Sprintf(
+		"Control Type: %s (%q)  Criticality: %t, SortKeys: ",
+		ControlTypeMap[ControlTypeServerSideSortRequest],
+		ControlTypeServerSideSortRequest,
+		c.Criticality,
+	)
+	for _, sortKey := range c.SortKeyList {
+		ctext += fmt.Sprintf("[%s,%s,%t]", sortKey.AttributeName, sortKey.OrderingRule, sortKey.ReverseOrder)
+	}
+	return ctext
+}
+
+/***********************************/
+/*      RESPONSE CONTROLS          */
+/***********************************/
+
+/**************************/
+/* ServerSideSortResponse */
+/**************************/
+
+type ControlServerSideSortResponse struct {
+	AttributeName string // Optional
+	Criticality   bool
+	Err           *Error
+}
+
+//SortResult ::= SEQUENCE {
+//   sortResult  ENUMERATED {
+//       success                   (0), -- results are sorted
+//       operationsError           (1), -- server internal failure
+//       timeLimitExceeded         (3), -- timelimit reached before
+//                                      -- sorting was completed
+//       strongAuthRequired        (8), -- refused to return sorted
+//                                      -- results via insecure
+//                                      -- protocol
+//       adminLimitExceeded       (11), -- too many matching entries
+//                                      -- for the server to sort
+//       noSuchAttribute          (16), -- unrecognized attribute
+//                                      -- type in sort key
+//       inappropriateMatching    (18), -- unrecognized or
+//                                      -- inappropriate matching
+//                                      -- rule in sort key
+//       insufficientAccessRights (50), -- refused to return sorted
+//                                      -- results to this client
+//       busy                     (51), -- too busy to process
+//       unwillingToPerform       (53), -- unable to sort
+//       other                    (80)
+//       },
+//   attributeType [0] AttributeDescription OPTIONAL }
+func NewControlServerSideSortResponse(p *ber.Packet) (Control, *Error) {
+	c := new(ControlServerSideSortResponse)
+	_, criticality, value := decodeControlTypeAndCrit(p)
+	c.Criticality = criticality
+
+	if value.Value != nil {
+		sortResult := ber.DecodePacket(value.Data.Bytes())
+		value.Data.Truncate(0)
+		value.Value = nil
+		value.AppendChild(sortResult)
+	}
+
+	value = value.Children[0]
+	value.Description = "ServerSideSortResponse Control Value"
+
+	value.Children[0].Description = "SortResult"
+	errNum := uint8(value.Children[0].Value.(uint64))
+	c.Err = NewError(errNum, errors.New(LDAPResultCodeMap[errNum]))
+
+	if len(value.Children) == 2 {
+		value.Children[1].Description = "Attribute Name"
+		c.AttributeName = value.Children[1].Value.(string)
+		value.Children[1].Value = c.AttributeName
+	}
+	return c, nil
+}
+
+func (c *ControlServerSideSortResponse) Encode() (p *ber.Packet, err *Error) {
+	return nil, NewError(ErrorEncoding, errors.New("Encode of Control unsupported."))
+}
+
+func (c *ControlServerSideSortResponse) GetControlType() string {
+	return ControlTypeServerSideSortResponse
+}
+
+func (c *ControlServerSideSortResponse) String() string {
+	return fmt.Sprintf("Control Type: %s (%q)  Criticality: %t, AttributeName: %s, ErrorValue: %d",
+		ControlTypeMap[ControlTypeServerSideSortResponse],
+		ControlTypeServerSideSortResponse,
+		c.Criticality,
+		c.AttributeName,
+		c.Err.ResultCode,
 	)
 }
