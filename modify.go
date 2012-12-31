@@ -41,8 +41,11 @@ type ModifyRequest struct {
 	Controls []Control
 }
 
-/* Example...
+func (req *ModifyRequest) RecordType() uint8 {
+	return ModifyRecord
+}
 
+/* Example...
 func modifyTest(l *ldap.Conn){
     var modDNs []string = []string{"cn=test,ou=People,dc=example,dc=com"}
     var modAttrs []string = []string{"cn"}
@@ -58,9 +61,6 @@ func modifyTest(l *ldap.Conn){
     fmt.Printf("Modify Success")
 }
 
-*/
-
-/*
    ModifyRequest ::= [APPLICATION 6] SEQUENCE {
          object          LDAPDN,
          changes         SEQUENCE OF change SEQUENCE {
@@ -71,7 +71,6 @@ func modifyTest(l *ldap.Conn){
                    ...  },
               modification    PartialAttribute } }
 */
-
 func (l *Conn) Modify(modReq *ModifyRequest) *Error {
 	messageID := l.nextMessageID()
 	encodedModify := encodeModifyRequest(modReq)
