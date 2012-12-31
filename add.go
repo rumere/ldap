@@ -16,6 +16,10 @@ type AddRequest struct {
 	Controls   []Control
 }
 
+func (req *AddRequest) RecordType() uint8 {
+	return AddRecord
+}
+
 func (l *Conn) Add(addReq *AddRequest) *Error {
 	messageID := l.nextMessageID()
 	encodedAdd, err := encodeAddRequest(addReq)
