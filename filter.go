@@ -217,22 +217,13 @@ func filterEncode(opType uint64, value []string) (*ber.Packet, *Error) {
 	var p *ber.Packet = nil
 	var err *Error
 
+	// condense and/or/not into one case.
 	switch opType {
-	case FilterAnd:
+	case FilterAnd, FilterOr, FilterNot:
 		if FilterDebug {
-			fmt.Println("FilterAnd")
+			fmt.Println(FilterMap[opType])
 		}
-		p = ber.Encode(ber.ClassContext, ber.TypeConstructed, FilterAnd, nil, FilterMap[FilterAnd])
-	case FilterOr:
-		if FilterDebug {
-			fmt.Println("FilterOr")
-		}
-		p = ber.Encode(ber.ClassContext, ber.TypeConstructed, FilterOr, nil, FilterMap[FilterOr])
-	case FilterNot:
-		if FilterDebug {
-			fmt.Println("FilterNot")
-		}
-		p = ber.Encode(ber.ClassContext, ber.TypeConstructed, FilterNot, nil, FilterMap[FilterNot])
+		p = ber.Encode(ber.ClassContext, ber.TypeConstructed, uint8(opType), nil, FilterMap[opType])
 	case FilterItem:
 		if FilterDebug {
 			fmt.Println("FilterItem")
@@ -262,16 +253,7 @@ func encodeItem(attrOpVal []string) (*ber.Packet, *Error) {
 		}
 	}
 
-	// AttributeValueAssertion seq of the ritght op.
-	p := ber.Encode(ber.ClassContext, ber.TypeConstructed,
-		uint8(FilterComponent[op]), nil, FilterMap[FilterComponent[op]])
-	p.AppendChild(
-		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
-			ber.TagOctetString, attr, "Attribute"))
-	p.AppendChild(
-		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
-			ber.TagOctetString, UnescapeFilterValue(val), "Value"))
-
+	p, _ := AttributeValueAssertion(attr, op, val)
 	return p, nil
 }
 
@@ -497,4 +479,22 @@ func EscapeFilterValue(filter string) string {
 		},
 	)
 	return string(repl)
+}
+
+func AttributeValueAssertion(attr, op, value string) (*ber.Packet, *Error) {
+	filterComp, ok := FilterComponent[op]
+	if !ok {
+		return nil, NewError(ErrorEncoding, errors.New("Invalid Assertion Op."))
+	}
+
+	// AttributeValueAssertion seq of the right op.
+	p := ber.Encode(ber.ClassContext, ber.TypeConstructed,
+		uint8(filterComp), nil, FilterMap[filterComp])
+	p.AppendChild(
+		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
+			ber.TagOctetString, attr, "Attribute"))
+	p.AppendChild(
+		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
+			ber.TagOctetString, UnescapeFilterValue(value), "Value"))
+	return p, nil
 }
