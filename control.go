@@ -19,9 +19,10 @@ const (
 	ControlTypeManageDsaITRequest      = "2.16.840.1.113730.3.4.2"
 	ControlTypeSubtreeDeleteRequest    = "1.2.840.113556.1.4.805"
 	ControlTypeNoOpRequest             = "1.3.6.1.4.1.4203.1.10.2"
-
-	ControlTypeServerSideSortRequest  = "1.2.840.113556.1.4.473"
-	ControlTypeServerSideSortResponse = "1.2.840.113556.1.4.474"
+	ControlTypeServerSideSortRequest   = "1.2.840.113556.1.4.473"
+	ControlTypeServerSideSortResponse  = "1.2.840.113556.1.4.474"
+	ControlTypeVlvRequest              = "2.16.840.1.113730.3.4.9"
+	ControlTypeVlvResponse             = "2.16.840.1.113730.3.4.10"
 
 //1.2.840.113556.1.4.473
 //1.3.6.1.1.12
@@ -41,7 +42,7 @@ const (
 //2.16.840.1.113730.3.4.3
 //2.16.840.1.113730.3.4.4
 //2.16.840.1.113730.3.4.5
-//2.16.840.1.113730.3.4.9
+//
 )
 
 var ControlTypeMap = map[string]string{
@@ -53,11 +54,14 @@ var ControlTypeMap = map[string]string{
 	ControlTypeNoOpRequest:             "NoOpRequest",
 	ControlTypeServerSideSortRequest:   "ServerSideSortRequest",
 	ControlTypeServerSideSortResponse:  "ServerSideSortResponse",
+	ControlTypeVlvRequest:              "VlvRequest",
+	ControlTypeVlvResponse:             "VlvResponse",
 }
 
 var ControlDecodeMap = map[string]func(p *ber.Packet) (Control, *Error){
 	ControlTypeServerSideSortResponse: NewControlServerSideSortResponse,
 	ControlTypePaging:                 NewControlPagingFromPacket,
+	ControlTypeVlvResponse:            NewControlVlvResponse,
 }
 
 // Control Interface
@@ -423,6 +427,103 @@ func (c *ControlServerSideSortRequest) String() string {
 	return ctext
 }
 
+/*************************/
+/* VlvRequest */
+/*************************/
+
+var VlvDebug bool
+
+type VlvOffSet struct {
+	Offset       int32
+	ContentCount int32
+}
+
+/*
+  VirtualListViewRequest ::= SEQUENCE {
+       beforeCount    INTEGER (0..maxInt),
+       afterCount     INTEGER (0..maxInt),
+       target       CHOICE {
+                      byOffset        [0] SEQUENCE {
+                           offset          INTEGER (1 .. maxInt),
+                           contentCount    INTEGER (0 .. maxInt) },
+                      greaterThanOrEqual [1] AssertionValue },
+       contextID     OCTET STRING OPTIONAL }
+*/
+type ControlVlvRequest struct {
+	Criticality        bool
+	BeforeCount        int32
+	AfterCount         int32
+	ByOffset           *VlvOffSet
+	GreaterThanOrEqual string
+	ContextID          []byte
+}
+
+func (c *ControlVlvRequest) Encode() (*ber.Packet, *Error) {
+	p := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "ControlVlvRequest")
+	p.AppendChild(
+		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
+			ber.TagOctetString, ControlTypeVlvRequest,
+			"Control Type ("+ControlTypeMap[ControlTypeVlvRequest]+")"))
+	if c.Criticality {
+		p.AppendChild(ber.NewBoolean(ber.ClassUniversal, ber.TypePrimative, ber.TagBoolean, c.Criticality, "Criticality"))
+	}
+	octetString := ber.Encode(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, nil, "Octet String")
+
+	vlvSeq := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "VirtualListViewRequest")
+	beforeCount := ber.NewInteger(ber.ClassUniversal, ber.TypePrimative, ber.TagInteger, uint64(c.BeforeCount), "BeforeCount")
+	afterCount := ber.NewInteger(ber.ClassUniversal, ber.TypePrimative, ber.TagInteger, uint64(c.AfterCount), "AfterCount")
+	var target *ber.Packet
+	switch {
+	case c.ByOffset != nil:
+		target = ber.Encode(ber.ClassContext, ber.TypeConstructed, 0, nil, "ByOffset")
+		offset := ber.NewInteger(ber.ClassUniversal, ber.TypePrimative, ber.TagInteger, uint64(c.ByOffset.Offset), "Offset")
+		contentCount := ber.NewInteger(ber.ClassUniversal, ber.TypePrimative, ber.TagInteger, uint64(c.ByOffset.ContentCount), "ContentCount")
+		target.AppendChild(offset)
+		target.AppendChild(contentCount)
+	case len(c.GreaterThanOrEqual) > 0:
+		// TODO incorrect for some values, binary?
+		target = ber.NewString(ber.ClassContext, ber.TypePrimative, 1, c.GreaterThanOrEqual, "GreaterThanOrEqual")
+	}
+	if target == nil {
+		return nil, NewError(ErrorEncoding, errors.New("VLV target equal to nil"))
+	}
+	vlvSeq.AppendChild(beforeCount)
+	vlvSeq.AppendChild(afterCount)
+	vlvSeq.AppendChild(target)
+
+	if len(c.ContextID) > 0 {
+		contextID := ber.NewString(ber.ClassUniversal, ber.TypePrimative,
+			ber.TagOctetString, string(c.ContextID), "ContextID")
+		vlvSeq.AppendChild(contextID)
+	}
+
+	octetString.AppendChild(vlvSeq)
+	p.AppendChild(octetString)
+
+	if VlvDebug {
+		ber.PrintPacket(p)
+	}
+
+	return p, nil
+
+}
+
+func (c *ControlVlvRequest) GetControlType() string {
+	return ControlTypeMap[ControlTypeVlvRequest]
+}
+
+func (c *ControlVlvRequest) String() string {
+	ctext := fmt.Sprintf(
+		"Control Type: %s (%q)  Criticality: %t, BeforeCount: %d, AfterCount: %d"+
+			", ByOffset.Offset: %d, ByOffset.ContentCount: %d, GreaterThanOrEqual: %s",
+		ControlTypeMap[ControlTypeVlvRequest],
+		ControlTypeVlvRequest,
+		c.Criticality, c.BeforeCount, c.AfterCount, c.ByOffset.Offset,
+		c.ByOffset.ContentCount, c.GreaterThanOrEqual,
+	)
+	return ctext
+}
+
 /***********************************/
 /*      RESPONSE CONTROLS          */
 /***********************************/
@@ -502,5 +603,89 @@ func (c *ControlServerSideSortResponse) String() string {
 		c.Criticality,
 		c.AttributeName,
 		c.Err.ResultCode,
+	)
+}
+
+/***************/
+/* VlvResponse */
+/***************/
+
+type ControlVlvResponse struct {
+	Criticality    bool
+	TargetPosition uint64
+	ContentCount   uint64
+	Err            *Error // VirtualListViewResult
+	ContextID      string
+}
+
+/*
+ VirtualListViewResponse ::= SEQUENCE {
+       targetPosition    INTEGER (0 .. maxInt),
+       contentCount     INTEGER (0 .. maxInt),
+       virtualListViewResult ENUMERATED {
+            success (0),
+            operationsError (1),
+            protocolError (3),
+            unwillingToPerform (53),
+            insufficientAccessRights (50),
+            timeLimitExceeded (3),
+            adminLimitExceeded (11),
+            innapropriateMatching (18),
+            sortControlMissing (60),
+            offsetRangeError (61),
+            other(80),
+            ... },
+       contextID     OCTET STRING OPTIONAL }
+*/
+func NewControlVlvResponse(p *ber.Packet) (Control, *Error) {
+	c := new(ControlVlvResponse)
+	_, criticality, value := decodeControlTypeAndCrit(p)
+	c.Criticality = criticality
+
+	if value.Value != nil {
+		vlvResult := ber.DecodePacket(value.Data.Bytes())
+		value.Data.Truncate(0)
+		value.Value = nil
+		value.AppendChild(vlvResult)
+	}
+
+	value = value.Children[0]
+	value.Description = "VlvResponse Control Value"
+
+	value.Children[0].Description = "TargetPosition"
+	value.Children[1].Description = "ContentCount"
+	value.Children[2].Description = "VirtualListViewResult/Err"
+
+	c.TargetPosition = value.Children[0].Value.(uint64)
+	c.ContentCount = value.Children[1].Value.(uint64)
+
+	errNum := uint8(value.Children[2].Value.(uint64))
+	c.Err = NewError(errNum, errors.New(LDAPResultCodeMap[errNum]))
+
+	if len(value.Children) == 4 {
+		value.Children[3].Description = "ContextID"
+		c.ContextID = value.Children[3].Value.(string)
+	}
+
+	return c, nil
+}
+
+func (c *ControlVlvResponse) Encode() (p *ber.Packet, err *Error) {
+	return nil, NewError(ErrorEncoding, errors.New("Encode of Control unsupported."))
+}
+
+func (c *ControlVlvResponse) GetControlType() string {
+	return ControlTypeVlvResponse
+}
+
+func (c *ControlVlvResponse) String() string {
+	return fmt.Sprintf("Control Type: %s (%q)  Criticality: %t, TargetPosition: %d, ContentCount: %d, ErrorValue: %d, ContextID: %s",
+		ControlTypeMap[ControlTypeVlvResponse],
+		ControlTypeVlvResponse,
+		c.Criticality,
+		c.TargetPosition,
+		c.ContentCount,
+		c.Err.ResultCode,
+		c.ContextID,
 	)
 }
