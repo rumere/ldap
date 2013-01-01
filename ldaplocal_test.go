@@ -5,6 +5,7 @@
 package ldap
 
 import (
+	//"encoding/hex"
 	"fmt"
 	// "runtime/debug"
 	"testing"
@@ -655,4 +656,100 @@ func TestLocalOrderedSearch(t *testing.T) {
 		fmt.Println(sssResponse.String())
 	}
 	fmt.Printf("TestLocalSearch: %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
+}
+
+func TestLocalVlvSearch(t *testing.T) {
+	fmt.Printf("TestLocalVlvSearch: starting...\n")
+	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+
+	// l.Debug = true
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	defer l.Close()
+
+	err = l.Bind(local_ldap_binddn, local_ldap_passwd)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	search_request := NewSimpleSearchRequest(
+		local_base_dn,
+		ScopeWholeSubtree,
+		"(cn=*)",
+		local_attributes,
+	)
+	vlvControl := new(ControlVlvRequest)
+	vlvControl.BeforeCount = 0
+	vlvControl.AfterCount = 3
+
+	offset := new(VlvOffSet)
+	offset.Offset = 1
+	offset.ContentCount = 3
+
+	vlvControl.ByOffset = offset
+
+	//pack, _ := vlvControl.Encode()
+	//fmt.Println(hex.Dump(pack.Bytes()))
+
+	search_request.AddControl(vlvControl)
+
+	serverSideSortAttrRuleOrder := ServerSideSortAttrRuleOrder{
+		AttributeName: "cn",
+		OrderingRule:  "",
+		ReverseOrder:  false,
+	}
+	sortKeyList := make([]ServerSideSortAttrRuleOrder, 0, 1)
+	sortKeyList = append(sortKeyList, serverSideSortAttrRuleOrder)
+	sortControl := NewControlServerSideSortRequest(sortKeyList, true)
+	search_request.AddControl(sortControl)
+
+	l.Debug = false
+	sr, err := l.Search(search_request)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	_, vlvResp := FindControl(sr.Controls, ControlTypeVlvResponse)
+	if vlvResp != nil {
+		fmt.Println(vlvResp.String())
+	}
+	for _, entry := range sr.Entries {
+		fmt.Println(entry.GetAttributeValue("cn"))
+	}
+	fmt.Printf("TestLocalVlvSearch (byOffSet): %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
+
+	search_request = NewSimpleSearchRequest(
+		local_base_dn,
+		ScopeWholeSubtree,
+		"(cn=*)",
+		local_attributes,
+	)
+
+	vlvControl = new(ControlVlvRequest)
+	vlvControl.BeforeCount = 0
+	vlvControl.AfterCount = 3
+	vlvControl.GreaterThanOrEqual = "Aaren Amar"
+
+	//pack, _ := vlvControl.Encode()
+	//fmt.Println(hex.Dump(pack.Bytes()))
+
+	search_request.AddControl(vlvControl)
+	search_request.AddControl(sortControl)
+
+	sr, err = l.Search(search_request)
+	if err != nil {
+		t.Errorf(err.Error())
+		return
+	}
+	_, vlvResp = FindControl(sr.Controls, ControlTypeVlvResponse)
+	if vlvResp != nil {
+		fmt.Println(vlvResp.String())
+	}
+	for _, entry := range sr.Entries {
+		fmt.Println(entry.GetAttributeValue("cn"))
+	}
+	fmt.Printf("TestLocalVlvSearch (value): %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
+	fmt.Printf("TestLocalVlvSearch: Finished.\n")
 }
