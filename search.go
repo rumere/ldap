@@ -264,7 +264,7 @@ func decodeSearchResponse(packet *ber.Packet) (discreteSearchResult *DiscreteSea
 					controls = append(controls, c)
 				} else {
 					// not fatal but definately a warning
-					log.Println("Couldn't decode : " + child.Children[0].Value.(string))
+					log.Println("Couldn't decode Control : " + child.Children[0].Value.(string))
 				}
 			}
 			discreteSearchResult.Controls = controls
