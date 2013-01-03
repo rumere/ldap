@@ -11,9 +11,8 @@ import (
 )
 
 type AddRequest struct {
-	DN         string
-	Attributes []EntryAttribute
-	Controls   []Control
+	Entry    *Entry
+	Controls []Control
 }
 
 func (req *AddRequest) RecordType() uint8 {
@@ -94,11 +93,11 @@ func (l *Conn) Add(addReq *AddRequest) *Error {
 */
 func encodeAddRequest(addReq *AddRequest) (*ber.Packet, *Error) {
 	addPacket := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ApplicationAddRequest, nil, ApplicationMap[ApplicationAddRequest])
-	addPacket.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, addReq.DN, "LDAP DN"))
+	addPacket.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, addReq.Entry.DN, "LDAP DN"))
 
 	attributeList := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "AttributeList")
 
-	for _, attr := range addReq.Attributes {
+	for _, attr := range addReq.Entry.Attributes {
 		attribute := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "Attribute")
 		attribute.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, attr.Name, "Attribute Desc"))
 		if len(attr.Values) == 0 {
@@ -121,22 +120,24 @@ func (req *AddRequest) Bytes() []byte {
 }
 
 func NewAddRequest(dn string) (req *AddRequest) {
-	req = &AddRequest{DN: dn, Attributes: make([]EntryAttribute, 0, 5), Controls: make([]Control, 0)}
+	req = &AddRequest{Entry: NewEntry(dn), Controls: make([]Control, 0)}
 	return
 }
 
 func (req *AddRequest) AddAttribute(attr *EntryAttribute) {
-	req.Attributes = append(req.Attributes, *attr)
+	req.Entry.AddAttributeValues(attr.Name, attr.Values)
 }
 
 func (req *AddRequest) AddAttributes(attrs []EntryAttribute) {
-	req.Attributes = append(req.Attributes, attrs...)
+	for _, attr := range attrs {
+		req.Entry.AddAttributeValues(attr.Name, attr.Values)
+	}
 }
 
-// Basic LDIF dump, no formating, etc
+// DumpAddRequest - Basic LDIF "like" dump for testing, no formating, etc
 func (addReq *AddRequest) DumpAddRequest() (dump string) {
-	dump = fmt.Sprintf("dn: %s\n", addReq.DN)
-	for _, attr := range addReq.Attributes {
+	dump = fmt.Sprintf("dn: %s\n", addReq.Entry.DN)
+	for _, attr := range addReq.Entry.Attributes {
 		for _, val := range attr.Values {
 			dump += fmt.Sprintf("%s: %s\n", attr.Name, val)
 		}
