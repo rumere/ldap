@@ -76,9 +76,9 @@ func (lr *LDIFReader) ReadLDIFEntry() (LDIFRecord, *Error) {
 }
 
 func sliceToLDIFRecord(lines [][]byte) (LDIFRecord, *Error) {
-	// var controls []Control
 	var dn string
 	var dataLineStart int // better name, after dn/controls/changetype
+	controls := make([]Control, 0)
 	recordtype := EntryRecord
 LINES:
 	for i, line := range lines {
@@ -119,10 +119,15 @@ LINES:
 	unsupportError := NewError(ErrorLDIFRead, errors.New("Unsupported LDIF record type"))
 	switch recordtype {
 	case AddRecord:
+		addEntry, err := ldifLinesToEntryRecord(dn, lines[dataLineStart:])
+		if err != nil {
+			return nil, err
+		}
+		addRequest := AddRequest{Entry: addEntry, Controls: controls}
 		if LDIFDebug {
 			log.Printf("dn: %s, changetype: %d, datastart: %d\n", dn, AddRecord, dataLineStart)
 		}
-		return nil, unsupportError
+		return &addRequest, nil
 	case ModifyRecord:
 		if LDIFDebug {
 			log.Printf("dn: %s, changetype: %d, datastart: %d\n", dn, ModifyRecord, dataLineStart)
@@ -161,27 +166,18 @@ LINES:
 //	Name   string
 //	Values []string
 //}
-func ldifLinesToEntryRecord(dn string, lines [][]byte) (LDIFRecord, *Error) {
-	entry := new(Entry)
-	entry.DN = dn
-	entry.Attributes = make([]*EntryAttribute, 0)
+func ldifLinesToEntryRecord(dn string, lines [][]byte) (*Entry, *Error) {
+	entry := NewEntry(dn)
 	for _, line := range lines {
 		bAttr, bValue, err := findAttrAndValue(line)
-		attr := string(bAttr)
+		attributeName := string(bAttr)
 		if err != nil {
 			return nil, err
 		}
 		if bAttr == nil && bValue == nil {
 			continue // -
 		}
-		position := entry.GetAttributeIndex(attr)
-		if position == -1 {
-			eAttr := EntryAttribute{Name: attr, Values: []string{string(bValue)}}
-			entry.Attributes = append(entry.Attributes, &eAttr)
-		} else {
-			entry.Attributes[position].Values =
-				append(entry.Attributes[position].Values, string(bValue))
-		}
+		entry.AddAttributeValue(attributeName, string(bValue))
 		//log.Printf("processed: %s: %s\n", attr, string(bValue))
 	}
 	//fmt.Println(entry)

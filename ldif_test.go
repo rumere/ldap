@@ -55,9 +55,10 @@ func TestLDIFOpenAndRead(t *testing.T) {
 		t.Errorf("record 0: record.RecordType() mismatch")
 	}
 	entry := record.(*Entry)
-	if entry.GetAttributeValue("description") != "a multi-line attribute value" {
+	if entry.GetAttributeValues("description")[0] != "a multi-line attribute value" {
 		t.Errorf("record 0: description mismatch")
 	}
+	fmt.Printf("1 (entry): DN: %s\n", entry.DN)
 	// record 1
 	record, err = lr.ReadLDIFEntry()
 	if err != nil {
@@ -67,7 +68,7 @@ func TestLDIFOpenAndRead(t *testing.T) {
 		t.Errorf("record 1: record.RecordType() mismatch")
 	}
 
-	// TODO - Currently only support entries, rest are do fix up.
+	// TODO - Currently only support add and entries, rest are do fix up.
 
 	// record 2
 	record, err = lr.ReadLDIFEntry()
@@ -77,14 +78,17 @@ func TestLDIFOpenAndRead(t *testing.T) {
 	if record != nil && record.RecordType() != ModifyRecord {
 		fmt.Errorf("record 2: record.RecordType() mismatch")
 	}
+
 	// record 3
 	record, err = lr.ReadLDIFEntry()
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-	if record != nil && record.RecordType() != AddRecord {
+	if record.RecordType() != AddRecord {
 		t.Errorf("record 3: record.RecordType() mismatch")
 	}
+	addRequest := record.(*AddRequest)
+	fmt.Printf("3 (addRequest): DN: %s\n", addRequest.Entry.DN)
 	// record 4
 	record, err = lr.ReadLDIFEntry()
 	if err != nil {

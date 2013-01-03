@@ -716,7 +716,7 @@ func TestLocalVlvSearch(t *testing.T) {
 		fmt.Println(vlvResp.String())
 	}
 	for _, entry := range sr.Entries {
-		fmt.Println(entry.GetAttributeValue("cn"))
+		fmt.Println(entry.GetAttributeValues("cn")[0])
 	}
 	fmt.Printf("TestLocalVlvSearch (byOffSet): %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
 
@@ -748,7 +748,7 @@ func TestLocalVlvSearch(t *testing.T) {
 		fmt.Println(vlvResp.String())
 	}
 	for _, entry := range sr.Entries {
-		fmt.Println(entry.GetAttributeValue("cn"))
+		fmt.Println(entry.GetAttributeValues("cn")[0])
 	}
 	fmt.Printf("TestLocalVlvSearch (value): %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
 	fmt.Printf("TestLocalVlvSearch: Finished.\n")
