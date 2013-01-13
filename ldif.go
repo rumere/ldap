@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"regexp"
@@ -45,6 +46,7 @@ type LDIFReader struct {
 
 	NoMoreEntries bool
 	EntryCount    uint64
+	LineCount     uint64
 }
 
 func NewLDIFReader(reader io.Reader) (*LDIFReader, *Error) {
@@ -82,7 +84,7 @@ func sliceToLDIFRecord(lines [][]byte) (LDIFRecord, *Error) {
 	recordtype := EntryRecord
 LINES:
 	for i, line := range lines {
-		attrName, value, err := findAttrAndValue(line)
+		attrName, value, _, err := findAttrAndValue(line)
 		if err != nil {
 			return nil, err
 		}
@@ -115,8 +117,8 @@ LINES:
 		dataLineStart = i
 		break
 	}
-	// TODO - add all the missing record types i.e. almost all :)
-	unsupportError := NewError(ErrorLDIFRead, errors.New("Unsupported LDIF record type"))
+	// TODO - add the missing record types
+	unsupportedError := NewError(ErrorLDIFRead, errors.New("Unsupported LDIF record type"))
 	switch recordtype {
 	case AddRecord:
 		addEntry, err := ldifLinesToEntryRecord(dn, lines[dataLineStart:])
@@ -132,22 +134,31 @@ LINES:
 		if LDIFDebug {
 			log.Printf("dn: %s, changetype: %d, datastart: %d\n", dn, ModifyRecord, dataLineStart)
 		}
-		return nil, unsupportError
+		modRequest, err := ldifLinesToModifyRecord(dn, lines[dataLineStart:])
+		if err != nil {
+			return nil, err
+		}
+		modRequest.Controls = controls
+		return modRequest, nil
 	case ModDnRecord:
 		if LDIFDebug {
 			log.Printf("dn: %s, changetype: %d, datastart: %d\n", dn, ModDnRecord, dataLineStart)
 		}
-		return nil, unsupportError
+		return nil, unsupportedError
 	case ModRdnRecord:
 		if LDIFDebug {
 			log.Printf("dn: %s, changetype: %d, datastart: %d\n", dn, ModRdnRecord, dataLineStart)
 		}
-		return nil, unsupportError
+		return nil, unsupportedError
 	case DeleteRecord:
 		if LDIFDebug {
 			log.Printf("dn: %s, changetype: %d, datastart: %d\n", dn, DeleteRecord, dataLineStart)
 		}
-		return nil, unsupportError
+		deleteRequest := NewDeleteRequest(dn)
+		for _, control := range controls {
+			deleteRequest.AddControl(control)
+		}
+		return deleteRequest, nil
 	case EntryRecord:
 		if LDIFDebug {
 			log.Printf("dn: %s, changetype: %d, datastart: %d\n", dn, EntryRecord, dataLineStart)
@@ -157,26 +168,73 @@ LINES:
 	return nil, NewError(ErrorLDIFRead, errors.New("Unkown LDIF record type"))
 }
 
-//type Entry struct {
-//	DN         string
-//	Attributes []*EntryAttribute
-//}
+func ldifLinesToModifyRecord(dn string, lines [][]byte) (*ModifyRequest, *Error) {
+	modReq := NewModifyRequest(dn)
+	var currentModType uint8
+	var currentAttrName string
+	var newMod *Mod
 
-//type EntryAttribute struct {
-//	Name   string
-//	Values []string
-//}
-func ldifLinesToEntryRecord(dn string, lines [][]byte) (*Entry, *Error) {
-	entry := NewEntry(dn)
+	isNewMod := true
+
 	for _, line := range lines {
-		bAttr, bValue, err := findAttrAndValue(line)
-		attributeName := string(bAttr)
+		bAttr, bValue, sep, err := findAttrAndValue(line)
 		if err != nil {
 			return nil, err
 		}
-		if bAttr == nil && bValue == nil {
+		if sep {
+			if newMod == nil {
+				return nil, NewError(ErrorLDIFRead,
+					errors.New("Misplaced '-'?"))
+			}
+			modReq.AddMod(newMod)
+			isNewMod = true
+			continue
+		}
+		attrOrOpLower := strings.ToLower(string(bAttr))
+		if isNewMod { // current line should be "operation: attr"
+			switch {
+			case attrOrOpLower == "add":
+				currentModType = ModAdd
+			case attrOrOpLower == "delete":
+				currentModType = ModDelete
+			case attrOrOpLower == "replace":
+				currentModType = ModReplace
+			case attrOrOpLower == "increment":
+				currentModType = ModIncrement
+			case true:
+				return nil, NewError(ErrorLDIFRead, errors.New("Expecting Modtype, not found."))
+			}
+			currentAttrName = string(bValue)
+			isNewMod = false
+			newMod = NewMod(currentModType, currentAttrName, nil)
+		} else {
+			attrName := string(bAttr)
+			if currentAttrName != attrName {
+				return nil, NewError(ErrorLDIFRead,
+					errors.New(fmt.Sprintf("AttrName mismatch %s != %s", currentAttrName, attrName)))
+			}
+			attrValue := string(bValue)
+			// could check for empty values but some servers accept them
+			newMod.Modification.Values = append(newMod.Modification.Values, attrValue)
+		}
+	}
+	if isNewMod == false {
+		modReq.AddMod(newMod)
+	}
+	return modReq, nil
+}
+
+func ldifLinesToEntryRecord(dn string, lines [][]byte) (*Entry, *Error) {
+	entry := NewEntry(dn)
+	for _, line := range lines {
+		bAttr, bValue, separator, err := findAttrAndValue(line)
+		if err != nil {
+			return nil, err
+		}
+		if separator {
 			continue // -
 		}
+		attributeName := string(bAttr)
 		entry.AddAttributeValue(attributeName, string(bValue))
 		//log.Printf("processed: %s: %s\n", attr, string(bValue))
 	}
@@ -184,16 +242,17 @@ func ldifLinesToEntryRecord(dn string, lines [][]byte) (*Entry, *Error) {
 	return entry, nil
 }
 
-func findAttrAndValue(line []byte) (attr []byte, value []byte, err *Error) {
+func findAttrAndValue(line []byte) (attr []byte, value []byte, separator bool, err *Error) {
 	var valueStart int
 	colonLoc := bytes.Index(line, attrValueSep)
 	base64 := false
 	if line[0] == '-' {
+		separator = true
 		return
 	}
 	// find the location of first ':'
 	if colonLoc == -1 {
-		return nil, nil, NewError(ErrorLDIFRead, errors.New(": not found in LDIF attr line."))
+		return nil, nil, false, NewError(ErrorLDIFRead, errors.New(": not found in LDIF attr line."))
 	} else if line[colonLoc+1] == ':' { // base64 attr
 		valueStart = colonLoc + 2
 		if line[colonLoc+2] == ' ' {
@@ -210,12 +269,10 @@ func findAttrAndValue(line []byte) (attr []byte, value []byte, err *Error) {
 	attr = line[:colonLoc]
 
 	if base64 {
-		decodedValue := make([]byte, stdBase64.DecodedLen(len(line[valueStart:])))
-		count, err := stdBase64.Decode(decodedValue, line[valueStart:])
-		if err != nil || count == 0 {
-			return nil, nil, NewError(ErrorLDIFRead, errors.New("Error decoding base64 value"))
+		value, err = decodeBase64(line[valueStart:])
+		if err != nil {
+			return nil, nil, false, NewError(ErrorLDIFRead, errors.New("Error decoding base64 value"))
 		}
-		value = decodedValue[:count]
 	} else {
 		value = line[valueStart:]
 	}
@@ -243,7 +300,7 @@ ENTRY:
 			}
 			return nil, NewError(ErrorLDIFRead, err)
 		}
-
+		lr.LineCount++
 		if line[0] == '\n' || (line[0] == '\r' && line[1] == '\n') {
 			if len(entry) == 0 {
 				continue ENTRY
@@ -276,4 +333,13 @@ ENTRY:
 	//	fmt.Println(hex.Dump(line))
 	//}
 	return entry, nil
+}
+
+func decodeBase64(encodedBytes []byte) ([]byte, *Error) {
+	decodedValue := make([]byte, stdBase64.DecodedLen(len(encodedBytes)))
+	count, err := stdBase64.Decode(decodedValue, encodedBytes)
+	if err != nil || count == 0 {
+		return nil, NewError(ErrorLDIFRead, errors.New("Error decoding base64 value"))
+	}
+	return decodedValue[:count], nil
 }
