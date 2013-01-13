@@ -133,9 +133,6 @@ func NewSearchRequest(
 //
 //It is NOT an efficent way to process huge result sets i.e. it doesn't process on a pageSize
 //number of entries, it returns the combined result.
-//
-//Controls are not included in the SearchResult as they don't make sense for a combined result
-//set
 func (l *Conn) SearchWithPaging(searchRequest *SearchRequest, pagingSize uint32) (*SearchResult, *Error) {
 	pagingControl := NewControlPaging(pagingSize)
 	searchRequest.AddControl(pagingControl)
@@ -150,7 +147,7 @@ func (l *Conn) SearchWithPaging(searchRequest *SearchRequest, pagingSize uint32)
 
 		allResults.Entries = append(allResults.Entries, searchResult.Entries...)
 		allResults.Referrals = append(allResults.Referrals, searchResult.Referrals...)
-		// allResults really shouldn't have Controls as its a combinaion of multiple searches
+		allResults.Controls = append(allResults.Controls, searchResult.Controls...)
 
 		_, pagingResponsePacket := FindControl(searchResult.Controls, ControlTypePaging)
 		// If initial result and no paging control then server doesn't support paging
