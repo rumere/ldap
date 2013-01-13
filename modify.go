@@ -159,13 +159,14 @@ func encodeModifyRequest(req *ModifyRequest) (p *ber.Packet) {
 }
 
 func NewModifyRequest(dn string) (req *ModifyRequest) {
-	req = &ModifyRequest{DN: dn, Mods: make([]Mod, 0, 5), Controls: make([]Control, 0)}
+	req = &ModifyRequest{DN: dn, Mods: make([]Mod, 0), Controls: make([]Control, 0)}
 	return
 }
 
 // Basic LDIF dump, no formating, etc
 func (req *ModifyRequest) DumpModRequest() (dump string) {
 	dump = fmt.Sprintf("dn: %s\n", req.DN)
+	dump = fmt.Sprintf("changetype: modify\n")
 	for _, mod := range req.Mods {
 		dump += mod.DumpMod()
 	}
@@ -174,7 +175,6 @@ func (req *ModifyRequest) DumpModRequest() (dump string) {
 
 // Basic LDIF dump, no formating, etc
 func (mod *Mod) DumpMod() (dump string) {
-	dump = fmt.Sprintf("changetype: modify\n")
 	dump += fmt.Sprintf("%s: %s\n", ModMap[mod.ModOperation], mod.Modification.Name)
 	for _, val := range mod.Modification.Values {
 		dump += fmt.Sprintf("%s: %s\n", mod.Modification.Name, val)
@@ -184,6 +184,9 @@ func (mod *Mod) DumpMod() (dump string) {
 }
 
 func NewMod(modType uint8, attr string, values []string) (mod *Mod) {
+	if values == nil {
+		values = []string{}
+	}
 	partEntryAttr := EntryAttribute{Name: attr, Values: values}
 	mod = &Mod{ModOperation: modType, Modification: partEntryAttr}
 	return
