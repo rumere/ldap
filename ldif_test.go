@@ -31,6 +31,11 @@ changetype: modify
 replace: cn
 cn: joe blogs
 -
+delete: cn=joeDelete,ou=people,o=example.com
+-
+add: sn
+sn: clogs
+-
 
 dn: cn=joe2,ou=people,o=example.com
 changetype: add
@@ -47,6 +52,7 @@ func TestLDIFOpenAndRead(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	// record 0
+	fmt.Printf("Reading record 0\n")
 	record, err := lr.ReadLDIFEntry()
 	if err != nil {
 		t.Errorf(err.Error())
@@ -58,8 +64,10 @@ func TestLDIFOpenAndRead(t *testing.T) {
 	if entry.GetAttributeValues("description")[0] != "a multi-line attribute value" {
 		t.Errorf("record 0: description mismatch")
 	}
-	fmt.Printf("1 (entry): DN: %s\n", entry.DN)
+	fmt.Printf("0 (entry): DN: %s\n", entry.DN)
 	// record 1
+	fmt.Printf("Reading record 1\n")
+	LDIFDebug = true
 	record, err = lr.ReadLDIFEntry()
 	if err != nil {
 		t.Errorf(err.Error())
@@ -67,19 +75,25 @@ func TestLDIFOpenAndRead(t *testing.T) {
 	if record.RecordType() != EntryRecord {
 		t.Errorf("record 1: record.RecordType() mismatch")
 	}
-
-	// TODO - Currently only support add and entries, rest are do fix up.
-
+	entry = record.(*Entry)
+	if entry.GetAttributeValues("description")[0] != "a multi-line attribute value" {
+		t.Errorf("record 1: description mismatch")
+	}
+	LDIFDebug = false
 	// record 2
+	fmt.Printf("Reading record 2\n")
 	record, err = lr.ReadLDIFEntry()
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-	if record != nil && record.RecordType() != ModifyRecord {
+	if record.RecordType() != ModifyRecord {
 		fmt.Errorf("record 2: record.RecordType() mismatch")
 	}
-
+	modRequest := record.(*ModifyRequest)
+	fmt.Printf("2 (ModifyRequest): DN: %s\n", modRequest.DN)
+	fmt.Printf(modRequest.DumpModRequest())
 	// record 3
+	fmt.Printf("Reading record 3\n")
 	record, err = lr.ReadLDIFEntry()
 	if err != nil {
 		fmt.Println(err.Error())
@@ -90,14 +104,18 @@ func TestLDIFOpenAndRead(t *testing.T) {
 	addRequest := record.(*AddRequest)
 	fmt.Printf("3 (addRequest): DN: %s\n", addRequest.Entry.DN)
 	// record 4
+	fmt.Printf("Reading record 4\n")
 	record, err = lr.ReadLDIFEntry()
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-	if record != nil && record.RecordType() != DeleteRecord {
+	if record.RecordType() != DeleteRecord {
 		t.Errorf("record 4: record.RecordType() mismatch")
 	}
+	deleteRequest := record.(*DeleteRequest)
+	fmt.Printf("3 (deleteRequest): DN: %s\n", deleteRequest.DN)
 	// nil record
+	fmt.Printf("Reading record 5 (nil)\n")
 	record, err = lr.ReadLDIFEntry()
 	if err != nil {
 		t.Errorf(err.Error())
