@@ -60,7 +60,7 @@ func (e *Entry) GetAttributeValues(attributeName string) []string {
 
 // GetAttributeValue - returning an empty string is a bad idea
 // some directory servers will return empty attr values (Sunone).
-// Just asking for trouble. 
+// Just asking for trouble.
 //func (e *Entry) GetAttributeValue(attributeName string) string {
 //	values := e.GetAttributeValues(attributeName)
 //	if len(values) == 0 {

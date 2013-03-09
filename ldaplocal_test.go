@@ -579,11 +579,11 @@ func TestLocalSearchPagingWithHandler(t *testing.T) {
 
 func TestLocalConnAndSearch(t *testing.T) {
 	fmt.Printf("TestLocalConnAndSearch: starting...\n")
-	conn := new(Conn)
-	conn.Network = "tcp"
-	conn.Addr = fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port)
-	fmt.Println(conn)
-	l, err := DialUsingConn(conn)
+	l := new(Conn)
+	l.Network = "tcp"
+	l.Addr = fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port)
+	fmt.Println(l)
+	err := l.DialUsingConn()
 
 	// l.Debug = true
 	if err != nil {
