@@ -71,7 +71,12 @@ func (conn *Conn) DialUsingConn() *Error {
 		}
 
 		if conn.IsSSL {
-			conn.conn = tls.Client(c, conn.TlsConfig)
+			tlsConn := tls.Client(c, conn.TlsConfig)
+			err = tlsConn.Handshake()
+			if err != nil {
+				return NewError(ErrorNetwork, err)
+			}
+			conn.conn = tlsConn
 		} else {
 			conn.conn = c
 		}
