@@ -56,6 +56,7 @@ func TestSearchTimeoutSSL(t *testing.T) {
 		NetworkConnectTimeout: 5000 * time.Millisecond,
 		NetworkTimeout:        30 * time.Second,
 	}
+
 	err := l.DialUsingConn()
 	if err != nil {
 		t.Errorf(err.Error())
