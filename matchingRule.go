@@ -53,5 +53,5 @@ const (
 	MatchingRule_caseIgnoreIA5Match                  = "1.3.6.1.4.1.1466.109.114.2" // 1.3.6.1.4.1.1466.115.121.1.26
 	MatchingRule_caseExactIA5Match                   = "1.3.6.1.4.1.1466.109.114.1" // 1.3.6.1.4.1.1466.115.121.1.26
 	MatchingRule_uuidOrderingMatch                   = "1.3.6.1.1.16.3"             // 1.3.6.1.1.16.1
-	MatchingRule_uuidMatch                           = "1.3.6.1.1.16.2"             // 1.3.6.1.1.16.1	
+	MatchingRule_uuidMatch                           = "1.3.6.1.1.16.2"             // 1.3.6.1.1.16.1
 )

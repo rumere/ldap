@@ -456,7 +456,7 @@ func UnescapeFilterValue(filter string) string {
 	repl := unescapeFilterRegex.ReplaceAllFunc(
 		[]byte(filter),
 		func(match []byte) []byte {
-			// \( \) \\ \* 
+			// \( \) \\ \*
 			if len(match) == 2 {
 				return []byte{match[1]}
 			}
