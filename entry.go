@@ -77,3 +77,14 @@ func (e *Entry) GetAttributeIndex(Attribute string) int {
 	}
 	return -1
 }
+
+// TODO: Proper LDIF writer, currently just for testing...
+func (e *Entry) String() string {
+	ldif := "dn: " + e.DN + "\n"
+	for _, attr := range e.Attributes {
+		for _, val := range attr.Values {
+			ldif += attr.Name + ": " + val + "\n"
+		}
+	}
+	return ldif
+}
