@@ -11,7 +11,7 @@ import (
 )
 
 // Will return an error. Normally due to closed connection.
-func (l *Conn) Abandon(abandonMessageID uint64) (error *Error) {
+func (l *LDAPConnection) Abandon(abandonMessageID uint64) (error *Error) {
 	messageID := l.nextMessageID()
 	encodedAbandon := ber.NewInteger(ber.ClassApplication, ber.TypePrimative, ApplicationAbandonRequest, abandonMessageID, ApplicationMap[ApplicationAbandonRequest])
 

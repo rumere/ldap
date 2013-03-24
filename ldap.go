@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 	"io/ioutil"
+	"time"
 )
 
 // LDAP Application Codes
@@ -101,15 +102,19 @@ const (
 	LDAPResultAffectsMultipleDSAs          = 71
 	LDAPResultOther                        = 80
 
-	ErrorNetwork         = 200
-	ErrorFilterCompile   = 201
-	ErrorFilterDecompile = 202
-	ErrorDebugging       = 203
-	ErrorEncoding        = 204
-	ErrorDecoding        = 205
-	ErrorMissingControl  = 206
-	ErrorInvalidArgument = 207
-	ErrorLDIFRead        = 208
+	ErrorNetwork         = 201
+	ErrorFilterCompile   = 202
+	ErrorFilterDecompile = 203
+	ErrorDebugging       = 204
+	ErrorEncoding        = 205
+	ErrorDecoding        = 206
+	ErrorMissingControl  = 207
+	ErrorInvalidArgument = 208
+	ErrorLDIFRead        = 209
+)
+
+const (
+	DefaultTimeout = 60 * time.Minute
 )
 
 var LDAPResultCodeMap = map[uint8]string{
@@ -152,6 +157,16 @@ var LDAPResultCodeMap = map[uint8]string{
 	LDAPResultObjectClassModsProhibited:    "Object Class Mods Prohibited",
 	LDAPResultAffectsMultipleDSAs:          "Affects Multiple DSAs",
 	LDAPResultOther:                        "Other",
+
+	ErrorNetwork:         "ErrorNetwork",
+	ErrorFilterCompile:   "ErrorFilterCompile",
+	ErrorFilterDecompile: "ErrorFilterDecompile",
+	ErrorDebugging:       "ErrorDebugging",
+	ErrorEncoding:        "ErrorEncoding",
+	ErrorDecoding:        "ErrorDecoding",
+	ErrorMissingControl:  "ErrorMissingControl",
+	ErrorInvalidArgument: "ErrorInvalidArgument",
+	ErrorLDIFRead:        "ErrorLDIFRead",
 }
 
 // Adds descriptions to an LDAP Response packet for debugging

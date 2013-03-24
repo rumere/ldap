@@ -9,15 +9,12 @@ import (
 
 func TestSearchTimeout(t *testing.T) {
 	fmt.Printf("TestSearchTimeout: starting...\n")
-	l := &Conn{
-		Network: "tcp",
-		Addr:    fmt.Sprintf("%s:%d", ldap_server, ldap_port),
+	l := NewLDAPConnection(ldap_server, ldap_port)
+	l.NetworkConnectTimeout = 5000 * time.Millisecond
+	l.ReadTimeout = 30 * time.Second
+	l.AbandonMessageOnReadTimeout = true
+	err := l.Connect()
 
-		NetworkConnectTimeout: 5000 * time.Millisecond,
-		NetworkTimeout:        30 * time.Second,
-	}
-
-	err := l.DialUsingConn()
 	if err != nil {
 		t.Errorf(err.Error())
 		return
@@ -48,16 +45,16 @@ func TestSearchTimeoutSSL(t *testing.T) {
 	config := &tls.Config{
 		InsecureSkipVerify: true,
 	}
-	l := &Conn{
-		Network:               "tcp",
+
+	l := &LDAPConnection{
 		Addr:                  fmt.Sprintf("%s:%d", ldap_server, 636),
 		IsSSL:                 true,
 		TlsConfig:             config,
 		NetworkConnectTimeout: 5000 * time.Millisecond,
-		NetworkTimeout:        30 * time.Second,
+		ReadTimeout:           30 * time.Second,
 	}
 
-	err := l.DialUsingConn()
+	err := l.Connect()
 	if err != nil {
 		t.Errorf(err.Error())
 		return

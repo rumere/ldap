@@ -21,24 +21,24 @@ import (
 //	Debug bool // default false
 //	ConnectTimeout time.Duration // default 0 no timeout (not available in 1.0)
 //	ReadTimeout    time.Duration // default 0 no timeout
-//	Network        string // default empty
+//	Network        string // default empty "tcp"
 //	Addr           string // default empty
 //
 // A minimal connection...
-//	conn := new(ldap.Conn)
+//	conn := new(ldap.LDAPConnection)
 //	conn.Network = "tcp"
 //	conn.Addr    = "localhost:1389"
 //
 //	conn, err := ldap.DialUsingConn(conn) // returns the same conn passed but connected.
-type Conn struct {
+type LDAPConnection struct {
 	IsTLS bool
 	IsSSL bool
 	Debug bool
 
-	Network               string
-	Addr                  string
-	NetworkConnectTimeout time.Duration
-	NetworkTimeout        time.Duration
+	Addr                        string
+	NetworkConnectTimeout       time.Duration
+	ReadTimeout                 time.Duration
+	AbandonMessageOnReadTimeout bool
 
 	TlsConfig *tls.Config
 
@@ -53,110 +53,68 @@ type Conn struct {
 // DialUsingConn connects to the given address on the given network using
 // net.DialTimeout. SSL/startTLS can be enabled
 // Conn should be populated with connection information.
-func (conn *Conn) DialUsingConn() *Error {
-	if len(conn.chanResults) > 0 || conn.chanProcessMessage != nil || conn.chanMessageID != nil {
+func (l *LDAPConnection) Connect() *Error {
+	if len(l.chanResults) > 0 || l.chanProcessMessage != nil || l.chanMessageID != nil {
 		return NewError(ErrorInvalidArgument,
-			errors.New("DialWithConn: Connection already setup? Can't reuse."))
+			errors.New("Connect: Connection already setup? Can't reuse."))
 	}
 
-	conn.chanResults = map[uint64]chan *ber.Packet{}
-	conn.chanProcessMessage = make(chan *messagePacket)
-	conn.chanMessageID = make(chan uint64)
+	l.chanResults = map[uint64]chan *ber.Packet{}
+	l.chanProcessMessage = make(chan *messagePacket)
+	l.chanMessageID = make(chan uint64)
 
-	if conn.conn == nil {
-		c, err := net.DialTimeout(conn.Network, conn.Addr, conn.NetworkConnectTimeout)
+	if l.conn == nil {
+		var c net.Conn
+		var err error
+		if l.NetworkConnectTimeout > 0 {
+			c, err = net.DialTimeout("tcp", l.Addr, l.NetworkConnectTimeout)
+		} else {
+			c, err = net.Dial("tcp", l.Addr)
+		}
 
 		if err != nil {
 			return NewError(ErrorNetwork, err)
 		}
 
-		if conn.IsSSL {
-			tlsConn := tls.Client(c, conn.TlsConfig)
+		if l.IsSSL {
+			tlsConn := tls.Client(c, l.TlsConfig)
 			err = tlsConn.Handshake()
 			if err != nil {
 				return NewError(ErrorNetwork, err)
 			}
-			conn.conn = tlsConn
+			l.conn = tlsConn
 		} else {
-			conn.conn = c
+			l.conn = c
 		}
 	}
 
-	if conn.IsTLS {
-		err := conn.startTLS()
+	if l.IsTLS {
+		err := l.startTLS()
 		if err != nil {
 			return NewError(ErrorNetwork, err)
 		}
 	} else {
-		conn.start()
+		l.start()
 	}
 
 	return nil
 }
 
-// Dial connects to the given address on the given network using net.Dial
-// and then returns a new Conn for the connection.
-func Dial(network, addr string) (*Conn, *Error) {
-	c, err := net.Dial(network, addr)
-	if err != nil {
-		return nil, NewError(ErrorNetwork, err)
-	}
-	conn := NewConn(c)
-	conn.start()
-	return conn, nil
-}
-
-// Dial connects to the given address on the given network using net.Dial
-// and then sets up SSL connection and returns a new Conn for the connection.
-func DialSSL(network, addr string) (*Conn, *Error) {
-	c, err := tls.Dial(network, addr, nil)
-	if err != nil {
-		return nil, NewError(ErrorNetwork, err)
-	}
-	conn := NewConn(c)
-	conn.IsSSL = true
-
-	conn.start()
-	return conn, nil
-}
-
-// Dial connects to the given address on the given network using net.Dial
-// and then starts a TLS session and returns a new Conn for the connection.
-func DialTLS(network, addr string) (*Conn, *Error) {
-	c, err := net.Dial(network, addr)
-	if err != nil {
-		return nil, NewError(ErrorNetwork, err)
-	}
-	conn := NewConn(c)
-
-	err = conn.startTLS()
-	if err != nil {
-		conn.Close()
-		return nil, NewError(ErrorNetwork, err)
-	}
-	conn.start()
-	return conn, nil
-}
-
-// NewConn returns a new Conn using conn for network I/O.
-func NewConn(conn net.Conn) *Conn {
-	return &Conn{
-		conn:               conn,
-		IsSSL:              false,
-		Debug:              false,
-		chanResults:        map[uint64]chan *ber.Packet{},
-		chanProcessMessage: make(chan *messagePacket),
-		chanMessageID:      make(chan uint64),
+// NewConn returns a new basic connection. Should start connection via
+// Connect
+func NewLDAPConnection(server string, port uint16) *LDAPConnection {
+	return &LDAPConnection{
+		Addr: fmt.Sprintf("%s:%d", server, port),
 	}
 }
 
-func (l *Conn) start() {
+func (l *LDAPConnection) start() {
 	go l.reader()
 	go l.processMessages()
 }
 
 // Close closes the connection.
-func (l *Conn) Close() *Error {
+func (l *LDAPConnection) Close() *Error {
 	l.closeLock.Lock()
 	defer l.closeLock.Unlock()
 
@@ -173,7 +131,7 @@ func (l *Conn) Close() *Error {
 }
 
 // Returns the next available messageID
-func (l *Conn) nextMessageID() (messageID uint64) {
+func (l *LDAPConnection) nextMessageID() (messageID uint64) {
 	defer func() {
 		if r := recover(); r != nil {
 			messageID = 0
@@ -184,7 +142,7 @@ func (l *Conn) nextMessageID() (messageID uint64) {
 }
 
 // StartTLS sends the command to start a TLS session and then creates a new TLS Client
-func (l *Conn) startTLS() *Error {
+func (l *LDAPConnection) startTLS() *Error {
 	messageID := l.nextMessageID()
 
 	if l.IsSSL {
@@ -240,7 +198,7 @@ type messagePacket struct {
 	Channel   chan *ber.Packet
 }
 
-func (l *Conn) sendMessage(p *ber.Packet) (out chan *ber.Packet, err *Error) {
+func (l *LDAPConnection) sendMessage(p *ber.Packet) (out chan *ber.Packet, err *Error) {
 	message_id := p.Children[0].Value.(uint64)
 	out = make(chan *ber.Packet)
 
@@ -253,7 +211,7 @@ func (l *Conn) sendMessage(p *ber.Packet) (out chan *ber.Packet, err *Error) {
 	return
 }
 
-func (l *Conn) processMessages() {
+func (l *LDAPConnection) processMessages() {
 	defer l.closeAllChannels()
 
 	var message_id uint64 = 1
@@ -324,7 +282,7 @@ func (l *Conn) processMessages() {
 	}
 }
 
-func (l *Conn) closeAllChannels() {
+func (l *LDAPConnection) closeAllChannels() {
 	l.closeLock.Lock()
 	defer l.closeLock.Unlock()
 
@@ -343,12 +301,12 @@ func (l *Conn) closeAllChannels() {
 	l.chanProcessMessage = nil
 }
 
-func (l *Conn) finishMessage(MessageID uint64) {
+func (l *LDAPConnection) finishMessage(MessageID uint64) {
 	message_packet := &messagePacket{Op: MessageFinish, MessageID: MessageID}
 	l.sendProcessMessage(message_packet)
 }
 
-func (l *Conn) reader() {
+func (l *LDAPConnection) reader() {
 	defer l.Close()
 	for {
 		p, err := ber.ReadPacket(l.conn)
@@ -373,7 +331,7 @@ func (l *Conn) reader() {
 	}
 }
 
-func (l *Conn) sendProcessMessage(message *messagePacket) {
+func (l *LDAPConnection) sendProcessMessage(message *messagePacket) {
 	go func() {
 		l.closeLock.RLock()
 		defer l.closeLock.RUnlock()

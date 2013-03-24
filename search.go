@@ -58,7 +58,7 @@ type DiscreteSearchResult struct {
 }
 
 type ConnectionInfo struct {
-	Conn      *Conn
+	Conn      *LDAPConnection
 	MessageID uint64
 }
 
@@ -133,7 +133,7 @@ func NewSearchRequest(
 //
 //It is NOT an efficent way to process huge result sets i.e. it doesn't process on a pageSize
 //number of entries, it returns the combined result.
-func (l *Conn) SearchWithPaging(searchRequest *SearchRequest, pagingSize uint32) (*SearchResult, *Error) {
+func (l *LDAPConnection) SearchWithPaging(searchRequest *SearchRequest, pagingSize uint32) (*SearchResult, *Error) {
 	pagingControl := NewControlPaging(pagingSize)
 	searchRequest.AddControl(pagingControl)
 	allResults := new(SearchResult)
@@ -184,7 +184,7 @@ func (sr *SearchResult) ProcessDiscreteResult(dsr *DiscreteSearchResult, connInf
 }
 
 //Search is a blocking search. nil error on success.
-func (l *Conn) Search(searchRequest *SearchRequest) (*SearchResult, *Error) {
+func (l *LDAPConnection) Search(searchRequest *SearchRequest) (*SearchResult, *Error) {
 	result := &SearchResult{
 		Entries:   make([]*Entry, 0),
 		Referrals: make([]string, 0),
@@ -290,7 +290,7 @@ func sendError(errChannel chan<- *Error, err *Error) {
 //	a result by result basis.
 //	errorChan - if nil then blocking, else *Error returned via channel upon completion.
 //	returns *Error if blocking.
-func (l *Conn) SearchWithHandler(
+func (l *LDAPConnection) SearchWithHandler(
 	searchRequest *SearchRequest,
 	resultHandler SearchResultHandler,
 	errorChan chan<- *Error,

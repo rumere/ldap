@@ -65,7 +65,8 @@ var local_addAttrs []EntryAttribute = []EntryAttribute{
 
 func TestLocalConnect(t *testing.T) {
 	fmt.Printf("TestLocalConnect: starting...\n")
-	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	l := NewLDAPConnection(local_ldap_server, local_ldap_port)
+	err := l.Connect()
 	if err != nil {
 		t.Errorf(err.Error())
 		return
@@ -76,7 +77,8 @@ func TestLocalConnect(t *testing.T) {
 
 func TestLocalSearch(t *testing.T) {
 	fmt.Printf("TestLocalSearch: starting...\n")
-	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	l := NewLDAPConnection(local_ldap_server, local_ldap_port)
+	err := l.Connect()
 
 	// l.Debug = true
 	if err != nil {
@@ -107,7 +109,8 @@ func TestLocalSearch(t *testing.T) {
 
 func TestLocalSearchWithPaging(t *testing.T) {
 	fmt.Printf("TestLocalSearchWithPaging: starting...\n")
-	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	l := NewLDAPConnection(local_ldap_server, local_ldap_port)
+	err := l.Connect()
 	if err != nil {
 		t.Errorf(err.Error())
 		return
@@ -135,7 +138,7 @@ func TestLocalSearchWithPaging(t *testing.T) {
 	fmt.Printf("TestLocalSearchWithPaging: %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
 }
 
-func testLocalMultiGoroutineSearch(t *testing.T, l *Conn, results chan *SearchResult, i int) {
+func testLocalMultiGoroutineSearch(t *testing.T, l *LDAPConnection, results chan *SearchResult, i int) {
 	search_request := NewSearchRequest(
 		local_base_dn,
 		ScopeWholeSubtree, DerefAlways, 0, 0, false,
@@ -155,7 +158,8 @@ func testLocalMultiGoroutineSearch(t *testing.T, l *Conn, results chan *SearchRe
 
 func TestLocalMultiGoroutineSearch(t *testing.T) {
 	fmt.Printf("TestLocalMultiGoroutineSearch: starting...\n")
-	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	l := NewLDAPConnection(local_ldap_server, local_ldap_port)
+	err := l.Connect()
 	if err != nil {
 		t.Errorf(err.Error())
 		return
@@ -187,7 +191,8 @@ func TestLocalMultiGoroutineSearch(t *testing.T) {
 
 func TestLocalAddAndDelete(t *testing.T) {
 	fmt.Printf("TestLocalAddAndDelete: starting...\n")
-	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	l := NewLDAPConnection(local_ldap_server, local_ldap_port)
+	err := l.Connect()
 	if err != nil {
 		t.Errorf(err.Error())
 		return
@@ -211,7 +216,7 @@ func TestLocalAddAndDelete(t *testing.T) {
 		return
 	}
 	fmt.Printf("Deleting: %s\n", local_addDNs[0])
-	delRequest := &DeleteRequest{local_addDNs[0], nil}
+	delRequest := NewDeleteRequest(local_addDNs[0])
 	err = l.Delete(delRequest)
 	if err != nil {
 		t.Errorf("Delete : %s : result = %d\n", addDNs[0], err.ResultCode)
@@ -221,7 +226,8 @@ func TestLocalAddAndDelete(t *testing.T) {
 
 func TestLocalCompare(t *testing.T) {
 	fmt.Printf("TestLocalCompare: starting...\n")
-	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	l := NewLDAPConnection(local_ldap_server, local_ldap_port)
+	err := l.Connect()
 	if err != nil {
 		t.Errorf(err.Error())
 		return
@@ -264,7 +270,7 @@ func TestLocalCompare(t *testing.T) {
 	fmt.Printf("Compare Result : %d : %s\n", err.ResultCode, LDAPResultCodeMap[err.ResultCode])
 
 	fmt.Printf("Deleting: %s\n", local_addDNs[0])
-	delRequest := &DeleteRequest{local_addDNs[0], nil}
+	delRequest := NewDeleteRequest(local_addDNs[0])
 	err = l.Delete(delRequest)
 	if err != nil {
 		t.Errorf("Delete : %s : result = %d\n", addDNs[0], err.ResultCode)
@@ -274,7 +280,8 @@ func TestLocalCompare(t *testing.T) {
 
 func TestLocalControlPermissiveModifyRequest(t *testing.T) {
 	fmt.Printf("ControlPermissiveModifyRequest: starting...\n")
-	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	l := NewLDAPConnection(local_ldap_server, local_ldap_port)
+	err := l.Connect()
 	if err != nil {
 		t.Errorf(err.Error())
 		return
@@ -346,7 +353,8 @@ func TestLocalControlPermissiveModifyRequest(t *testing.T) {
 
 func TestLocalControlMatchedValuesRequest(t *testing.T) {
 	fmt.Printf("LocalControlMatchedValuesRequest: starting...\n")
-	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	l := NewLDAPConnection(local_ldap_server, local_ldap_port)
+	err := l.Connect()
 	if err != nil {
 		t.Errorf(err.Error())
 		return
@@ -463,7 +471,8 @@ func (c *counter) ProcessDiscreteResult(sr *DiscreteSearchResult, connInfo *Conn
 func TestLocalSearchWithHandler(t *testing.T) {
 	fmt.Printf("TestLocalSearchWithCallback: starting...\n")
 
-	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	l := NewLDAPConnection(local_ldap_server, local_ldap_port)
+	err := l.Connect()
 
 	// l.Debug = true
 	if err != nil {
@@ -531,7 +540,8 @@ func TestLocalSearchWithHandler(t *testing.T) {
 func TestLocalSearchPagingWithHandler(t *testing.T) {
 	fmt.Printf("TestLocalSearchPagingWithHandler: starting...\n")
 
-	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	l := NewLDAPConnection(local_ldap_server, local_ldap_port)
+	err := l.Connect()
 
 	// l.Debug = true
 	if err != nil {
@@ -579,11 +589,8 @@ func TestLocalSearchPagingWithHandler(t *testing.T) {
 
 func TestLocalConnAndSearch(t *testing.T) {
 	fmt.Printf("TestLocalConnAndSearch: starting...\n")
-	l := new(Conn)
-	l.Network = "tcp"
-	l.Addr = fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port)
-	fmt.Println(l)
-	err := l.DialUsingConn()
+	l := NewLDAPConnection(local_ldap_server, local_ldap_port)
+	err := l.Connect()
 
 	// l.Debug = true
 	if err != nil {
@@ -614,7 +621,8 @@ func TestLocalConnAndSearch(t *testing.T) {
 
 func TestLocalOrderedSearch(t *testing.T) {
 	fmt.Printf("TestLocalOrderedSearch: starting...\n")
-	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	l := NewLDAPConnection(local_ldap_server, local_ldap_port)
+	err := l.Connect()
 
 	// l.Debug = true
 	if err != nil {
@@ -660,7 +668,8 @@ func TestLocalOrderedSearch(t *testing.T) {
 
 func TestLocalVlvSearch(t *testing.T) {
 	fmt.Printf("TestLocalVlvSearch: starting...\n")
-	l, err := Dial("tcp", fmt.Sprintf("%s:%d", local_ldap_server, local_ldap_port))
+	l := NewLDAPConnection(local_ldap_server, local_ldap_port)
+	err := l.Connect()
 
 	// l.Debug = true
 	if err != nil {
