@@ -5,8 +5,6 @@
 package ldap
 
 import (
-	"errors"
-	"fmt"
 	"github.com/mavricknz/asn1-ber"
 )
 
@@ -27,62 +25,21 @@ type CompareRequest struct {
 	Controls []Control
 }
 
-func (l *Conn) Compare(compareReq *CompareRequest) *Error {
+func (l *LDAPConnection) Compare(req *CompareRequest) *Error {
 	messageID := l.nextMessageID()
-	encodedCompare, err := encodeCompareRequest(compareReq)
+	encodedCompare, err := encodeCompareRequest(req)
 	if err != nil {
 		return err
 	}
 
-	packet, err := requestBuildPacket(messageID, encodedCompare, compareReq.Controls)
+	packet, err := requestBuildPacket(messageID, encodedCompare, req.Controls)
 	if err != nil {
 		return err
 	}
 
-	if l.Debug {
-		ber.PrintPacket(packet)
-	}
-
-	channel, err := l.sendMessage(packet)
-
-	if err != nil {
-		return err
-	}
-
-	if channel == nil {
-		return NewError(ErrorNetwork, errors.New("Could not send message"))
-	}
-
-	defer l.finishMessage(messageID)
-	if l.Debug {
-		fmt.Printf("%d: waiting for response\n", messageID)
-	}
-
-	packet = <-channel
-
-	if l.Debug {
-		fmt.Printf("%d: got response %p\n", messageID, packet)
-	}
-
-	if packet == nil {
-		return NewError(ErrorNetwork, errors.New("Could not retrieve message"))
-	}
-
-	if l.Debug {
-		if err := addLDAPDescriptions(packet); err != nil {
-			return NewError(ErrorDebugging, err)
-		}
-		ber.PrintPacket(packet)
-	}
-
-	result_code, result_description := getLDAPResultCode(packet)
-
-	if l.Debug {
-		fmt.Printf("%d: returning\n", messageID)
-	}
 	// CompareTrue = 6, CompareFalse = 5
-	// return an "Error"
-	return NewError(result_code, errors.New(result_description))
+	// returns an "Error"
+	return l.sendReqRespPacket(messageID, packet)
 }
 
 func encodeCompareRequest(req *CompareRequest) (*ber.Packet, *Error) {

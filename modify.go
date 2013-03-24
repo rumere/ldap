@@ -5,9 +5,9 @@
 package ldap
 
 import (
-	"errors"
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
+	"time"
 )
 
 const (
@@ -36,9 +36,11 @@ type Mod struct {
 }
 
 type ModifyRequest struct {
-	DN       string
-	Mods     []Mod
-	Controls []Control
+	DN                   string
+	Mods                 []Mod
+	Controls             []Control
+	ReadTimeout          time.Duration
+	AbandonOnReadFailure bool
 }
 
 func (req *ModifyRequest) RecordType() uint8 {
@@ -71,7 +73,7 @@ func modifyTest(l *ldap.Conn){
                    ...  },
               modification    PartialAttribute } }
 */
-func (l *Conn) Modify(modReq *ModifyRequest) *Error {
+func (l *LDAPConnection) Modify(modReq *ModifyRequest) *Error {
 	messageID := l.nextMessageID()
 	encodedModify := encodeModifyRequest(modReq)
 
@@ -80,53 +82,7 @@ func (l *Conn) Modify(modReq *ModifyRequest) *Error {
 		return err
 	}
 
-	if l.Debug {
-		ber.PrintPacket(packet)
-	}
-
-	channel, err := l.sendMessage(packet)
-
-	if err != nil {
-		return err
-	}
-
-	if channel == nil {
-		return NewError(ErrorNetwork, errors.New("Could not send message"))
-	}
-
-	defer l.finishMessage(messageID)
-	if l.Debug {
-		fmt.Printf("%d: waiting for response\n", messageID)
-	}
-
-	packet = <-channel
-
-	if l.Debug {
-		fmt.Printf("%d: got response %p\n", messageID, packet)
-	}
-
-	if packet == nil {
-		return NewError(ErrorNetwork, errors.New("Could not retrieve message"))
-	}
-
-	if l.Debug {
-		if err := addLDAPDescriptions(packet); err != nil {
-			return NewError(ErrorDebugging, err)
-		}
-		ber.PrintPacket(packet)
-	}
-
-	result_code, result_description := getLDAPResultCode(packet)
-
-	if result_code != 0 {
-		return NewError(result_code, errors.New(result_description))
-	}
-
-	if l.Debug {
-		fmt.Printf("%d: returning\n", messageID)
-	}
-	// success
-	return nil
+	return l.sendReqRespPacket(messageID, packet)
 }
 
 func (req *ModifyRequest) Bytes() []byte {
@@ -159,7 +115,13 @@ func encodeModifyRequest(req *ModifyRequest) (p *ber.Packet) {
 }
 
 func NewModifyRequest(dn string) (req *ModifyRequest) {
-	req = &ModifyRequest{DN: dn, Mods: make([]Mod, 0), Controls: make([]Control, 0)}
+	req = &ModifyRequest{
+		DN:                   dn,
+		Mods:                 make([]Mod, 0),
+		Controls:             make([]Control, 0),
+		ReadTimeout:          0 * time.Second,
+		AbandonOnReadFailure: false,
+	}
 	return
 }
 

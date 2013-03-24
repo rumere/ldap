@@ -6,11 +6,17 @@
 package ldap
 
 import (
-	"errors"
 	"github.com/mavricknz/asn1-ber"
+	"time"
 )
 
-func (l *Conn) Bind(username, password string) *Error {
+func (l *LDAPConnection) Bind(username, password string) *Error {
+	return l.BindWithTimeout(username, password, 0, false)
+}
+
+func (l *LDAPConnection) BindWithTimeout(username, password string,
+	timeout time.Duration, abandonOnTimeout bool) *Error {
+
 	messageID := l.nextMessageID()
 	encodedBind := encodeSimpleBindRequest(username, password)
 
@@ -19,37 +25,8 @@ func (l *Conn) Bind(username, password string) *Error {
 		return err
 	}
 
-	if l.Debug {
-		ber.PrintPacket(packet)
-	}
+	return l.sendReqRespPacket(messageID, packet)
 
-	channel, err := l.sendMessage(packet)
-	if err != nil {
-		return err
-	}
-	if channel == nil {
-		return NewError(ErrorNetwork, errors.New("Could not send message"))
-	}
-	defer l.finishMessage(messageID)
-	packet = <-channel
-
-	if packet == nil {
-		return NewError(ErrorNetwork, errors.New("Could not retrieve response"))
-	}
-
-	if l.Debug {
-		if err := addLDAPDescriptions(packet); err != nil {
-			return NewError(ErrorDebugging, err)
-		}
-		ber.PrintPacket(packet)
-	}
-
-	result_code, result_description := getLDAPResultCode(packet)
-	if result_code != 0 {
-		return NewError(result_code, errors.New(result_description))
-	}
-
-	return nil
 }
 
 func encodeSimpleBindRequest(username, password string) (bindRequest *ber.Packet) {
