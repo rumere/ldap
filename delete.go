@@ -6,14 +6,11 @@ package ldap
 
 import (
 	"github.com/mavricknz/asn1-ber"
-	"time"
 )
 
 type DeleteRequest struct {
-	DN                   string
-	Controls             []Control
-	ReadTimeout          time.Duration
-	AbandonOnReadFailure bool
+	DN       string
+	Controls []Control
 }
 
 func (req *DeleteRequest) RecordType() uint8 {

@@ -7,15 +7,9 @@ package ldap
 
 import (
 	"github.com/mavricknz/asn1-ber"
-	"time"
 )
 
 func (l *LDAPConnection) Bind(username, password string) *Error {
-	return l.BindWithTimeout(username, password, 0, false)
-}
-
-func (l *LDAPConnection) BindWithTimeout(username, password string,
-	timeout time.Duration, abandonOnTimeout bool) *Error {
 
 	messageID := l.nextMessageID()
 	encodedBind := encodeSimpleBindRequest(username, password)

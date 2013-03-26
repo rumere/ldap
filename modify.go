@@ -7,7 +7,6 @@ package ldap
 import (
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
-	"time"
 )
 
 const (
@@ -36,11 +35,9 @@ type Mod struct {
 }
 
 type ModifyRequest struct {
-	DN                   string
-	Mods                 []Mod
-	Controls             []Control
-	ReadTimeout          time.Duration
-	AbandonOnReadFailure bool
+	DN       string
+	Mods     []Mod
+	Controls []Control
 }
 
 func (req *ModifyRequest) RecordType() uint8 {
@@ -116,11 +113,9 @@ func encodeModifyRequest(req *ModifyRequest) (p *ber.Packet) {
 
 func NewModifyRequest(dn string) (req *ModifyRequest) {
 	req = &ModifyRequest{
-		DN:                   dn,
-		Mods:                 make([]Mod, 0),
-		Controls:             make([]Control, 0),
-		ReadTimeout:          0 * time.Second,
-		AbandonOnReadFailure: false,
+		DN:       dn,
+		Mods:     make([]Mod, 0),
+		Controls: make([]Control, 0),
 	}
 	return
 }
