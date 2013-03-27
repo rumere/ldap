@@ -55,7 +55,7 @@ func (l *LDAPConnection) sendReqRespPacket(messageID uint64, packet *ber.Packet)
 	var responsePacket *ber.Packet = nil
 
 	// If a timeout is set then use it, else user can do it.
-	// user can't abandon the connection as don't have messageID.
+	// user can't abandon the connection as doesn't have messageID.
 	if uint64(l.ReadTimeout) > 0 {
 		select {
 		case responsePacket = <-channel:
