@@ -42,7 +42,7 @@ var addAttrs []EntryAttribute = []EntryAttribute{
 
 // Just testing structure and basic dump.
 func TestAdd(t *testing.T) {
-	fmt.Println("TestAdd starting...\n")
+	fmt.Println("TestAdd starting...")
 	for _, dn := range addDNs {
 		addReq := NewAddRequest(dn)
 		for _, attr := range addAttrs {
