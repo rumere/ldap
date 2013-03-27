@@ -95,7 +95,7 @@ func TestLDIFOpenAndRead(t *testing.T) {
 	}
 	modRequest := record.(*ModifyRequest)
 	fmt.Printf("2 (ModifyRequest): DN: %s\n", modRequest.DN)
-	fmt.Printf(modRequest.DumpModRequest())
+	fmt.Println(modRequest)
 
 	// record 3
 	fmt.Printf("Reading record 3\n")

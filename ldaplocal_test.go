@@ -308,7 +308,7 @@ func TestLocalControlPermissiveModifyRequest(t *testing.T) {
 	modreq := NewModifyRequest(local_addDNs[0])
 	mod := NewMod(ModAdd, "description", []string{"aaa"})
 	modreq.AddMod(mod)
-	fmt.Printf(modreq.DumpModRequest())
+	fmt.Println(modreq)
 	err = l.Modify(modreq)
 	if err != nil {
 		t.Errorf("Modify : %s : result = %d\n", addDNs[0], err.ResultCode)
@@ -321,7 +321,7 @@ func TestLocalControlPermissiveModifyRequest(t *testing.T) {
 	control := NewControlString(ControlTypePermissiveModifyRequest, true, "")
 	fmt.Println(control.String())
 	modreq.AddControl(control)
-	fmt.Printf(modreq.DumpModRequest())
+	fmt.Println(modreq)
 	err = l.Modify(modreq)
 	if err != nil {
 		t.Errorf("Modify (Permissive): %s : result = %d\n", addDNs[0], err.ResultCode)
@@ -334,7 +334,7 @@ func TestLocalControlPermissiveModifyRequest(t *testing.T) {
 	control = NewControlPermissiveModifyRequest(false)
 	fmt.Println(control.String())
 	modreq.AddControl(control)
-	fmt.Printf(modreq.DumpModRequest())
+	fmt.Println(modreq)
 	err = l.Modify(modreq)
 	if err != nil {
 		t.Errorf("Modify (Permissive): %s : result = %d\n", addDNs[0], err.ResultCode)
