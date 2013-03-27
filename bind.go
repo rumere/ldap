@@ -9,6 +9,10 @@ import (
 	"github.com/mavricknz/asn1-ber"
 )
 
+/*
+Simple bind to the server. If using a timeout you should close the connection
+on a bind failure.
+*/
 func (l *LDAPConnection) Bind(username, password string) *Error {
 
 	messageID := l.nextMessageID()
