@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 	"net"
+	// "runtime/debug"
 	"sync"
 	"time"
 )
@@ -308,6 +309,17 @@ func (l *LDAPConnection) finishMessage(MessageID uint64) {
 
 func (l *LDAPConnection) reader() {
 	defer l.Close()
+	defer func() {
+		if r := recover(); r != nil {
+			// There is a issue with the reader still running
+			// while the l.conn has been closed and nil'ed.
+			// Catch here, while investigating better way of
+			// handling.
+			// go test -test.cpu=2 ldaptests
+			// fmt.Println("Recovered in reader", r)
+			// debug.PrintStack()
+		}
+	}()
 	for {
 		p, err := ber.ReadPacket(l.conn)
 		if err != nil {
