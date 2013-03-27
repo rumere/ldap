@@ -46,7 +46,7 @@ func TestFilter(t *testing.T) {
 	for _, i := range test_filters {
 		filter, err := CompileFilter(i.filter_str)
 		if err != nil {
-			t.Errorf("Problem compiling %s - %s", err.Error())
+			t.Errorf("Problem compiling %s - %s", i.filter_str, err.Error())
 		} else if filter.Tag != uint8(i.filter_type) {
 			t.Errorf("%q Expected %q got %q", i.filter_str, FilterMap[uint64(i.filter_type)], FilterMap[uint64(filter.Tag)])
 		} else {
@@ -64,7 +64,7 @@ func TestFilterEncode(t *testing.T) {
 	for _, i := range encode_filters {
 		p, err := CompileFilter(i.filter_str)
 		if err != nil {
-			t.Errorf("Problem compiling %s - %s\n", err.Error())
+			t.Errorf("Problem compiling %s - %s\n", i.filter_str, err.Error())
 		}
 		fBytes, error := hex.DecodeString(i.filter_encoded)
 		if error != nil {
