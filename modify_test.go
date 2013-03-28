@@ -25,7 +25,7 @@ func TestModify(t *testing.T) {
 				modreq.AddMod(mod)
 			}
 		}
-		fmt.Printfln(modreq)
+		fmt.Print(modreq)
 	}
 }
 
@@ -38,7 +38,7 @@ func TestModifyMods(t *testing.T) {
 			mods = append(mods, *mod)
 		}
 		modreq.AddMods(mods)
-		fmt.Printf(modreq)
+		fmt.Print(modreq)
 	}
 }
 

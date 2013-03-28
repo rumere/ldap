@@ -89,7 +89,7 @@ func (req *AddRequest) AddAttributes(attrs []EntryAttribute) {
 }
 
 // DumpAddRequest - Basic LDIF "like" dump for testing, no formating, etc
-func (addReq *AddRequest) DumpAddRequest() (dump string) {
+func (addReq *AddRequest) String() (dump string) {
 	dump = fmt.Sprintf("dn: %s\n", addReq.Entry.DN)
 	for _, attr := range addReq.Entry.Attributes {
 		for _, val := range attr.Values {

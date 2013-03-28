@@ -371,3 +371,10 @@ func (l *LDAPConnection) SearchWithHandler(
 	go sendError(errorChan, nil)
 	return nil
 }
+
+func (sr *SearchResult) String() (dump string) {
+	for _, entry := range sr.Entries {
+		dump = fmt.Sprint(entry)
+	}
+	return
+}

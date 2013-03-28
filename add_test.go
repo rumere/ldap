@@ -48,7 +48,7 @@ func TestAdd(t *testing.T) {
 		for _, attr := range addAttrs {
 			addReq.AddAttribute(&attr)
 		}
-		fmt.Printf("%s", addReq.DumpAddRequest())
+		fmt.Print(addReq)
 	}
 	fmt.Println("TestAdd finsished.")
 }

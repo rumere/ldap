@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 	"net"
-	// "runtime/debug"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -126,7 +126,9 @@ func (l *LDAPConnection) Close() *Error {
 		if err != nil {
 			return NewError(ErrorNetwork, err)
 		}
-		l.conn = nil
+		// Don't nil conn, as reader() should be allowed to read
+		// error. If nil, then panics as using nil struct.
+		// l.conn = nil
 	}
 	return nil
 }
@@ -214,7 +216,12 @@ func (l *LDAPConnection) sendMessage(p *ber.Packet) (out chan *ber.Packet, err *
 
 func (l *LDAPConnection) processMessages() {
 	defer l.closeAllChannels()
-
+	//defer func() {
+	//	if r := recover(); r != nil {
+	//		fmt.Println("Recovered in processMessages", r)
+	//		debug.PrintStack()
+	//	}
+	//}()
 	var message_id uint64 = 1
 	var message_packet *messagePacket
 	for {
@@ -287,7 +294,6 @@ func (l *LDAPConnection) closeAllChannels() {
 	l.closeLock.Lock()
 	defer l.closeLock.Unlock()
 
-	fmt.Printf("closeAllChannels\n")
 	for MessageID, Channel := range l.chanResults {
 		if l.Debug {
 			fmt.Printf("Closing channel for MessageID %d\n", MessageID)
@@ -309,17 +315,17 @@ func (l *LDAPConnection) finishMessage(MessageID uint64) {
 
 func (l *LDAPConnection) reader() {
 	defer l.Close()
-	defer func() {
-		if r := recover(); r != nil {
-			// There is a issue with the reader still running
-			// while the l.conn has been closed and nil'ed.
-			// Catch here, while investigating better way of
-			// handling.
-			// go test -test.cpu=2 ldaptests
-			// fmt.Println("Recovered in reader", r)
-			// debug.PrintStack()
-		}
-	}()
+	//defer func() {
+	//	if r := recover(); r != nil {
+	//		// There was an issue with the reader still running
+	//		// while the l.conn had been closed and nil'ed.
+	//		// Catch here, while investigating better way of
+	//		// handling.
+	//		// go test -test.cpu=2 ldaptests
+	//		fmt.Println("Recovered in reader", r)
+	//		debug.PrintStack()
+	//	}
+	//}()
 	for {
 		p, err := ber.ReadPacket(l.conn)
 		if err != nil {
