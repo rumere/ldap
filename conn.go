@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 	"net"
-	"runtime/debug"
 	"sync"
 	"time"
 )
