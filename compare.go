@@ -5,6 +5,7 @@
 package ldap
 
 import (
+	"errors"
 	"github.com/mavricknz/asn1-ber"
 )
 
@@ -26,7 +27,11 @@ type CompareRequest struct {
 }
 
 func (l *LDAPConnection) Compare(req *CompareRequest) *Error {
-	messageID := l.nextMessageID()
+	messageID, ok := l.nextMessageID()
+	if !ok {
+		return NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+	}
+
 	encodedCompare, err := encodeCompareRequest(req)
 	if err != nil {
 		return err

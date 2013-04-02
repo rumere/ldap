@@ -5,6 +5,7 @@
 package ldap
 
 import (
+	"errors"
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 )
@@ -71,7 +72,10 @@ func modifyTest(l *ldap.Conn){
               modification    PartialAttribute } }
 */
 func (l *LDAPConnection) Modify(modReq *ModifyRequest) *Error {
-	messageID := l.nextMessageID()
+	messageID, ok := l.nextMessageID()
+	if !ok {
+		return NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+	}
 	encodedModify := encodeModifyRequest(modReq)
 
 	packet, err := requestBuildPacket(messageID, encodedModify, modReq.Controls)

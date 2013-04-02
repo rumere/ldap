@@ -6,6 +6,7 @@
 package ldap
 
 import (
+	"errors"
 	"github.com/mavricknz/asn1-ber"
 )
 
@@ -14,8 +15,11 @@ Simple bind to the server. If using a timeout you should close the connection
 on a bind failure.
 */
 func (l *LDAPConnection) Bind(username, password string) *Error {
+	messageID, ok := l.nextMessageID()
+	if !ok {
+		return NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+	}
 
-	messageID := l.nextMessageID()
 	encodedBind := encodeSimpleBindRequest(username, password)
 
 	packet, err := requestBuildPacket(messageID, encodedBind, nil)

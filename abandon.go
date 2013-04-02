@@ -12,7 +12,11 @@ import (
 
 // Will return an error. Normally due to closed connection.
 func (l *LDAPConnection) Abandon(abandonMessageID uint64) (error *Error) {
-	messageID := l.nextMessageID()
+	messageID, ok := l.nextMessageID()
+	if !ok {
+		return NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+	}
+
 	encodedAbandon := ber.NewInteger(ber.ClassApplication, ber.TypePrimative, ApplicationAbandonRequest, abandonMessageID, ApplicationMap[ApplicationAbandonRequest])
 
 	packet, err := requestBuildPacket(messageID, encodedAbandon, nil)

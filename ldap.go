@@ -111,6 +111,8 @@ const (
 	ErrorMissingControl  = 207
 	ErrorInvalidArgument = 208
 	ErrorLDIFRead        = 209
+	ErrorClosing         = 210
+	ErrorUnknown         = 211
 )
 
 const (
@@ -167,6 +169,7 @@ var LDAPResultCodeMap = map[uint8]string{
 	ErrorMissingControl:  "ErrorMissingControl",
 	ErrorInvalidArgument: "ErrorInvalidArgument",
 	ErrorLDIFRead:        "ErrorLDIFRead",
+	ErrorClosing:         "ErrorClosing",
 }
 
 // Adds descriptions to an LDAP Response packet for debugging

@@ -53,24 +53,27 @@ func (l *LDAPConnection) sendReqRespPacket(messageID uint64, packet *ber.Packet)
 	}
 
 	var responsePacket *ber.Packet = nil
+	var ok bool
 
-	// If a timeout is set then use it, else user can do it.
-	// user can't abandon the connection as doesn't have messageID.
-	if uint64(l.ReadTimeout) > 0 {
-		select {
-		case responsePacket = <-channel:
-		case <-time.After(l.ReadTimeout):
-			if l.AbandonMessageOnReadTimeout {
-				err = l.Abandon(messageID)
-				if err != nil {
-					return NewError(ErrorNetwork,
-						errors.New("Timeout waiting for Message and error on Abandon"))
-				}
-			}
-			return NewError(ErrorNetwork, errors.New("Timeout waiting for Message"))
+	// If a timeout is set then use it, else use default.
+	timeout := l.ReadTimeout
+	if uint64(timeout) == 0 {
+		timeout = DefaultTimeout
+	}
+	select {
+	case responsePacket, ok = <-channel:
+		if !ok {
+			return NewError(ErrorClosing, errors.New("Response Channel Closed"))
 		}
-	} else {
-		responsePacket = <-channel
+	case <-time.After(timeout):
+		if l.AbandonMessageOnReadTimeout {
+			err = l.Abandon(messageID)
+			if err != nil {
+				return NewError(ErrorNetwork,
+					errors.New("Timeout waiting for Message and error on Abandon"))
+			}
+		}
+		return NewError(ErrorNetwork, errors.New("Timeout waiting for Message"))
 	}
 
 	if l.Debug {

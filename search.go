@@ -295,7 +295,13 @@ func (l *LDAPConnection) SearchWithHandler(
 	resultHandler SearchResultHandler,
 	errorChan chan<- *Error,
 ) *Error {
-	messageID := l.nextMessageID()
+	messageID, ok := l.nextMessageID()
+	if !ok {
+		err := NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+		go sendError(errorChan, err)
+		return err
+	}
+
 	searchPacket, err := encodeSearchRequest(searchRequest)
 
 	if err != nil {

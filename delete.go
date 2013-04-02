@@ -5,6 +5,7 @@
 package ldap
 
 import (
+	"errors"
 	"github.com/mavricknz/asn1-ber"
 )
 
@@ -22,7 +23,10 @@ Simple delete
 */
 
 func (l *LDAPConnection) Delete(delReq *DeleteRequest) (error *Error) {
-	messageID := l.nextMessageID()
+	messageID, ok := l.nextMessageID()
+	if !ok {
+		return NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+	}
 	encodedDelete := ber.NewString(ber.ClassApplication, ber.TypePrimative, ApplicationDelRequest, delReq.DN, ApplicationMap[ApplicationDelRequest])
 
 	packet, err := requestBuildPacket(messageID, encodedDelete, delReq.Controls)

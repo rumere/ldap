@@ -20,7 +20,11 @@ func (req *AddRequest) RecordType() uint8 {
 }
 
 func (l *LDAPConnection) Add(req *AddRequest) *Error {
-	messageID := l.nextMessageID()
+	messageID, ok := l.nextMessageID()
+	if !ok {
+		return NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+	}
+
 	encodedAdd, err := encodeAddRequest(req)
 	if err != nil {
 		return err
