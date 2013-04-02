@@ -25,12 +25,12 @@ func TestSearchTimeout(t *testing.T) {
 	}
 	defer l.Close()
 
-	search_request := NewSearchRequest(
+	search_request := NewSimpleSearchRequest(
 		base_dn,
-		ScopeWholeSubtree, DerefAlways, 0, 0, false,
+		ScopeWholeSubtree,
 		filter[0],
 		attributes,
-		nil)
+	)
 
 	sr, err := l.Search(search_request)
 	if err != nil {
@@ -61,12 +61,12 @@ func TestSearchTimeoutSSL(t *testing.T) {
 	}
 	defer l.Close()
 
-	search_request := NewSearchRequest(
+	search_request := NewSimpleSearchRequest(
 		base_dn,
-		ScopeWholeSubtree, DerefAlways, 0, 0, false,
+		ScopeWholeSubtree,
 		filter[0],
 		attributes,
-		nil)
+	)
 
 	sr, err := l.Search(search_request)
 	if err != nil {
