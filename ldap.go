@@ -116,7 +116,8 @@ const (
 )
 
 const (
-	DefaultTimeout = 60 * time.Minute
+	DefaultTimeout       = 60 * time.Minute
+	ResultChanBufferSize = 5 // buffer items in each chanResults default: 5
 )
 
 var LDAPResultCodeMap = map[uint8]string{

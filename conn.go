@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 	"net"
+	"os"
 	"sync"
 	"time"
 )
@@ -42,16 +43,11 @@ type LDAPConnection struct {
 
 	conn               net.Conn
 	chanResults        map[uint64]chan *ber.Packet
-	chanResultsLock    sync.RWMutex
+	lockChanResults    sync.RWMutex
 	chanProcessMessage chan *messagePacket
-	chanProcessLock    sync.RWMutex
+	closeLock          sync.RWMutex
 	chanMessageID      chan uint64
 	connected          bool
-}
-
-type idAndChan struct {
-	messageID uint64
-	out       chan *ber.Packet
 }
 
 // Connect connects using information in LDAPConnection.
@@ -85,16 +81,14 @@ func (l *LDAPConnection) Connect() *Error {
 			l.conn = c
 		}
 	}
-
+	l.start()
+	l.connected = true
 	if l.IsTLS {
 		err := l.startTLS()
 		if err != nil {
 			return NewError(ErrorNetwork, err)
 		}
-	} else {
-		l.start()
 	}
-	l.connected = true
 	return nil
 }
 
@@ -183,22 +177,36 @@ type messagePacket struct {
 	Channel   chan *ber.Packet
 }
 
+func (l *LDAPConnection) getNewResultChannel(message_id uint64) (out chan *ber.Packet, err *Error) {
+	// as soon as a channel is requested add to chanResults to never miss
+	// on cleanup.
+	l.lockChanResults.Lock()
+	defer l.lockChanResults.Unlock()
+
+	if l.chanResults == nil {
+		return nil, NewError(ErrorClosing, errors.New("Conenction closing/closed"))
+	}
+
+	if _, ok := l.chanResults[message_id]; ok {
+		errStr := fmt.Sprintf("chanResults already allocated, message_id: %d", message_id)
+		return nil, NewError(ErrorUnknown, errors.New(errStr))
+	}
+
+	out = make(chan *ber.Packet, ResultChanBufferSize)
+	l.chanResults[message_id] = out
+	return
+}
+
 func (l *LDAPConnection) sendMessage(p *ber.Packet) (out chan *ber.Packet, err *Error) {
 	message_id := p.Children[0].Value.(uint64)
-	if l.Debug {
-		fmt.Printf("sendMessage-> message_id: %d\n", message_id)
+	// sendProcessMessage may not process a message on shutdown
+	// getNewResultChannel adds id/chan to chan results
+	out, err = l.getNewResultChannel(message_id)
+	if err != nil {
+		return
 	}
-
-	out = make(chan *ber.Packet)
-	l.chanResultsLock.Lock()
-	defer l.chanResultsLock.Unlock()
-	if l.chanResults == nil {
-		return nil, NewError(ErrorClosing, errors.New("l.chanResults is nil"))
-	}
-	l.chanResults[message_id] = out
-
 	if l.Debug {
-		fmt.Printf("Adding message_id: %d, out: %v to chanResults\n", message_id, out)
+		fmt.Printf("sendMessage-> message_id: %d, out: %v\n", message_id, out)
 	}
 
 	message_packet := &messagePacket{Op: MessageRequest, MessageID: message_id, Packet: p, Channel: out}
@@ -208,7 +216,16 @@ func (l *LDAPConnection) sendMessage(p *ber.Packet) (out chan *ber.Packet, err *
 
 func (l *LDAPConnection) processMessages() {
 	defer l.closeAllChannels()
-
+	defer func() {
+		// Close all channels, connection and quit.
+		// Use closeLock to stop MessageRequests
+		// and l.connected to stop any future MessageRequests. 
+		l.closeLock.Lock()
+		defer l.closeLock.Unlock()
+		l.connected = false
+		// will shutdown reader.
+		l.conn.Close()
+	}()
 	var message_id uint64 = 1
 	var message_packet *messagePacket
 
@@ -219,14 +236,6 @@ func (l *LDAPConnection) processMessages() {
 		case message_packet = <-l.chanProcessMessage:
 			switch message_packet.Op {
 			case MessageQuit:
-				// Close all channels, connection and quit
-				// use chanProcessLock to stop sends and l.connected
-				// to stop any future sends. 
-				l.chanProcessLock.Lock()
-				defer l.chanProcessLock.Unlock()
-				l.connected = false
-				// will shutdown reader.
-				l.conn.Close()
 				if l.Debug {
 					fmt.Printf("Shutting down\n")
 				}
@@ -236,16 +245,10 @@ func (l *LDAPConnection) processMessages() {
 				if l.Debug {
 					fmt.Printf("Sending message %d\n", message_packet.MessageID)
 				}
-				// l.chanResults[message_packet.MessageID] = message_packet.Channel
 				buf := message_packet.Packet.Bytes()
 				for len(buf) > 0 {
 					n, err := l.conn.Write(buf)
 					if err != nil {
-						// Close all channels, connection and quit
-						l.chanProcessLock.Lock()
-						defer l.chanProcessLock.Unlock()
-						l.connected = false
-						l.conn.Close()
 						if l.Debug {
 							fmt.Printf("Error Sending Message: %s\n", err.Error())
 						}
@@ -256,46 +259,22 @@ func (l *LDAPConnection) processMessages() {
 					}
 					buf = buf[n:]
 				}
-			case MessageResponse:
-				// Pass back to waiting goroutine
-				if l.Debug {
-					fmt.Printf("Receiving message %d\n", message_packet.MessageID)
-				}
-				func() {
-					l.chanResultsLock.RLock()
-					defer l.chanResultsLock.RUnlock()
-					chanResult, ok := l.chanResults[message_packet.MessageID]
-
-					if !ok {
-						fmt.Printf("Unexpected Message Result (possible Abandon): %d , MessageID: %d\n", message_id, message_packet.MessageID)
-						// TODO: Noisy when abandoning connections, as server can still send.
-						// Some sort of limited Abandon list?
-						//ber.PrintPacket(message_packet.Packet)
-					} else {
-						packetCopy := message_packet.Packet
-						go func() {
-							chanResult <- packetCopy
-						}()
-					}
-				}()
 			case MessageFinish:
 				// Remove from message list
 				if l.Debug {
 					fmt.Printf("Finished message %d\n", message_packet.MessageID)
 				}
-				func() {
-					l.chanResultsLock.Lock()
-					defer l.chanResultsLock.Unlock()
-					delete(l.chanResults, message_packet.MessageID)
-				}()
+				l.lockChanResults.Lock()
+				delete(l.chanResults, message_packet.MessageID)
+				l.lockChanResults.Unlock()
 			}
 		}
 	}
 }
 
 func (l *LDAPConnection) closeAllChannels() {
-	l.chanResultsLock.Lock()
-	defer l.chanResultsLock.Unlock()
+	l.lockChanResults.Lock()
+	defer l.lockChanResults.Unlock()
 	for MessageID, Channel := range l.chanResults {
 		if l.Debug {
 			fmt.Printf("Closing channel for MessageID %d\n", MessageID)
@@ -303,6 +282,7 @@ func (l *LDAPConnection) closeAllChannels() {
 		close(Channel)
 		delete(l.chanResults, MessageID)
 	}
+	l.chanResults = nil
 
 	close(l.chanMessageID)
 	l.chanMessageID = nil
@@ -318,17 +298,6 @@ func (l *LDAPConnection) finishMessage(MessageID uint64) {
 
 func (l *LDAPConnection) reader() {
 	defer l.Close()
-	//defer func() {
-	//	if r := recover(); r != nil {
-	//		// There was an issue with the reader still running
-	//		// while the l.conn had been closed and nil'ed.
-	//		// Catch here, while investigating better way of
-	//		// handling.
-	//		// go test -test.cpu=2 ldaptests
-	//		fmt.Println("Recovered in reader", r)
-	//		debug.PrintStack()
-	//	}
-	//}()
 	for {
 		p, err := ber.ReadPacket(l.conn)
 		if err != nil {
@@ -342,14 +311,45 @@ func (l *LDAPConnection) reader() {
 
 		message_id := p.Children[0].Value.(uint64)
 		message_packet := &messagePacket{Op: MessageResponse, MessageID: message_id, Packet: p}
-		l.sendProcessMessage(message_packet)
+
+		l.readerToChanResults(message_packet)
+	}
+}
+
+func (l *LDAPConnection) readerToChanResults(message_packet *messagePacket) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintln(os.Stderr, "Recovered in readerToChanResults", r)
+		}
+	}()
+	if l.Debug {
+		fmt.Printf("Receiving message %d\n", message_packet.MessageID)
+	}
+
+	// very small chance on disconnect to write to a closed channel as
+	// lockChanResults is unlocked immediately hence defer above.
+	// Don't lock while sending to chanResult below as that can block and hold
+	// the lock.
+	l.lockChanResults.RLock()
+	chanResult, ok := l.chanResults[message_packet.MessageID]
+	l.lockChanResults.RUnlock()
+
+	if !ok {
+		if l.Debug {
+			fmt.Printf("Message Result chan not found (possible Abandon), MessageID: %d\n", message_packet.MessageID)
+		}
+	} else {
+		// chanResult is a buffered channel of ResultChanBufferSize
+		chanResult <- message_packet.Packet
 	}
 }
 
 func (l *LDAPConnection) sendProcessMessage(message *messagePacket) {
 	go func() {
-		l.chanProcessLock.RLock()
-		defer l.chanProcessLock.RUnlock()
+		// multiple senders can queue on l.chanProcessMessage
+		// but block on shutdown.
+		l.closeLock.RLock()
+		defer l.closeLock.RUnlock()
 		if l.connected {
 			l.chanProcessMessage <- message
 		}

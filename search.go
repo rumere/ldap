@@ -277,10 +277,13 @@ func decodeSearchResponse(packet *ber.Packet) (discreteSearchResult *DiscreteSea
 	return nil, NewError(ErrorDecoding, errors.New("Couldn't decode search result."))
 }
 
-func sendError(errChannel chan<- *Error, err *Error) {
+func sendError(errChannel chan<- *Error, err *Error) *Error {
 	if errChannel != nil {
-		errChannel <- err
+		go func() {
+			errChannel <- err
+		}()
 	}
+	return err
 }
 
 //SearchWithHandler is the workhorse. Sends requests, decodes results and passes
@@ -291,28 +294,23 @@ func sendError(errChannel chan<- *Error, err *Error) {
 //	errorChan - if nil then blocking, else *Error returned via channel upon completion.
 //	returns *Error if blocking.
 func (l *LDAPConnection) SearchWithHandler(
-	searchRequest *SearchRequest,
-	resultHandler SearchResultHandler,
-	errorChan chan<- *Error,
+	searchRequest *SearchRequest, resultHandler SearchResultHandler, errorChan chan<- *Error,
 ) *Error {
 	messageID, ok := l.nextMessageID()
 	if !ok {
 		err := NewError(ErrorClosing, errors.New("MessageID channel is closed."))
-		go sendError(errorChan, err)
-		return err
+		return sendError(errorChan, err)
 	}
 
 	searchPacket, err := encodeSearchRequest(searchRequest)
 
 	if err != nil {
-		go sendError(errorChan, err)
-		return err
+		return sendError(errorChan, err)
 	}
 
 	packet, err := requestBuildPacket(messageID, searchPacket, searchRequest.Controls)
 	if err != nil {
-		go sendError(errorChan, err)
-		return err
+		return sendError(errorChan, err)
 	}
 
 	if l.Debug {
@@ -320,14 +318,13 @@ func (l *LDAPConnection) SearchWithHandler(
 	}
 
 	channel, err := l.sendMessage(packet)
+
 	if err != nil {
-		go sendError(errorChan, err)
-		return err
+		return sendError(errorChan, err)
 	}
 	if channel == nil {
 		err = NewError(ErrorNetwork, errors.New("Could not send message"))
-		go sendError(errorChan, err)
-		return err
+		return sendError(errorChan, err)
 	}
 	defer l.finishMessage(messageID)
 
@@ -340,42 +337,45 @@ func (l *LDAPConnection) SearchWithHandler(
 		if l.Debug {
 			fmt.Printf("%d: waiting for response\n", messageID)
 		}
-		packet = <-channel
+		packet, ok = <-channel
+
 		if l.Debug {
-			fmt.Printf("%d: got response %p\n", messageID, packet)
+			fmt.Printf("%d: got response %p, %v\n", messageID, packet, ok)
 		}
+
+		if !ok {
+			return NewError(ErrorClosing, errors.New("Response Channel Closed"))
+		}
+
 		if packet == nil {
 			err = NewError(ErrorNetwork, errors.New("Could not retrieve message"))
-			go sendError(errorChan, err)
-			return err
+			return sendError(errorChan, err)
 		}
 
 		if l.Debug {
 			if err := addLDAPDescriptions(packet); err != nil {
 				err = NewError(ErrorDebugging, err)
-				go sendError(errorChan, err)
-				return err
+				return sendError(errorChan, err)
 			}
 			ber.PrintPacket(packet)
 		}
 
 		discreteSearchResult, err := decodeSearchResponse(packet)
+
 		if err != nil {
-			go sendError(errorChan, err)
-			return err
+			return sendError(errorChan, err)
 		}
 
 		stop, err := resultHandler.ProcessDiscreteResult(discreteSearchResult, connectionInfo)
 		if err != nil {
-			go sendError(errorChan, err)
-			return err
+			return sendError(errorChan, err)
 		}
+
 		if discreteSearchResult.SearchResultType == SearchResultDone || stop {
 			break
 		}
 	}
-	go sendError(errorChan, nil)
-	return nil
+	return sendError(errorChan, nil)
 }
 
 func (sr *SearchResult) String() (dump string) {
