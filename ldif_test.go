@@ -31,8 +31,6 @@ changetype: modify
 replace: cn
 cn: joe blogs
 -
-delete: cn=joeDelete,ou=people,o=example.com
--
 add: sn
 sn: clogs
 -
@@ -43,9 +41,40 @@ cn: joe blogs
 
 dn: cn=joe2,ou=people,o=example.com
 changetype: delete
+
+dn: cn=joe3,ou=people,o=example.com
+cn: joe3
+description: space at end of sn
+sn: space at end 
+
+dn: cn=joe4,ou=people,o=example.com
+cn: joe4
+description: space at start of sn
+sn:  space at start
+
+dn: cn=joe5,ou=people,o=example.com
+cn: joe5
+description: less than "<" at start of sn
+sn: <blogs
+
+dn: cn=joe6,ou=people,o=example.com
+cn: joe6
+description: utf8 sn Hello World?
+sn: 世界
+
+dn: cn=joe7,ou=people,o=example.com
+cn: joe7
+description: A longish attibute value that should end up being wrapped around if that is enabled.
+sn: joe7
+
+dn: cn=joe7,ou=people,o=example.com
+cn: joe7
+description: <A longish attibute value that should end up being wrapped around if that is enabled, plus base64'ed
+sn: joe7
 `
 
 func TestLDIFOpenAndRead(t *testing.T) {
+	fmt.Printf("TestLDIFOpenAndRead: starting...\n")
 	reader := strings.NewReader(simpleLDIF)
 	lr, err := NewLDIFReader(reader)
 	if err != nil {
