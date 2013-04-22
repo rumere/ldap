@@ -111,8 +111,9 @@ const (
 	ErrorMissingControl  = 207
 	ErrorInvalidArgument = 208
 	ErrorLDIFRead        = 209
-	ErrorClosing         = 210
-	ErrorUnknown         = 211
+	ErrorLDIFWrite       = 210
+	ErrorClosing         = 211
+	ErrorUnknown         = 212
 )
 
 const (
