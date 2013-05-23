@@ -99,6 +99,22 @@ func NewLDAPConnection(server string, port uint16) *LDAPConnection {
 	}
 }
 
+func NewLDAPTLSConnection(server string, port uint16, tlsConfig *tls.Config) *LDAPConnection {
+	return &LDAPConnection{
+		Addr:      fmt.Sprintf("%s:%d", server, port),
+		IsTLS:     true,
+		TlsConfig: tlsConfig,
+	}
+}
+
+func NewLDAPSSLConnection(server string, port uint16, tlsConfig *tls.Config) *LDAPConnection {
+	return &LDAPConnection{
+		Addr:      fmt.Sprintf("%s:%d", server, port),
+		IsSSL:     true,
+		TlsConfig: tlsConfig,
+	}
+}
+
 func (l *LDAPConnection) start() {
 	go l.reader()
 	go l.processMessages()
@@ -145,7 +161,7 @@ func (l *LDAPConnection) startTLS() error {
 		return err
 	}
 
-	conn := tls.Client(l.conn, nil)
+	conn := tls.Client(l.conn, l.TlsConfig)
 	err = conn.Handshake()
 	if err != nil {
 		return err
