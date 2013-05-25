@@ -6,7 +6,6 @@
 package ldap
 
 import (
-	"errors"
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 	"log"
@@ -63,7 +62,7 @@ type ConnectionInfo struct {
 }
 
 type SearchResultHandler interface {
-	ProcessDiscreteResult(*DiscreteSearchResult, *ConnectionInfo) (bool, *Error)
+	ProcessDiscreteResult(*DiscreteSearchResult, *ConnectionInfo) (bool, error)
 }
 
 // SearchRequest passed to Search functions.
@@ -133,7 +132,7 @@ func NewSearchRequest(
 //
 //It is NOT an efficent way to process huge result sets i.e. it doesn't process on a pageSize
 //number of entries, it returns the combined result.
-func (l *LDAPConnection) SearchWithPaging(searchRequest *SearchRequest, pagingSize uint32) (*SearchResult, *Error) {
+func (l *LDAPConnection) SearchWithPaging(searchRequest *SearchRequest, pagingSize uint32) (*SearchResult, error) {
 	pagingControl := NewControlPaging(pagingSize)
 	searchRequest.AddControl(pagingControl)
 	allResults := new(SearchResult)
@@ -157,7 +156,7 @@ func (l *LDAPConnection) SearchWithPaging(searchRequest *SearchRequest, pagingSi
 			}
 			return allResults, nil
 		} else if pagingResponsePacket == nil {
-			return allResults, NewError(ErrorMissingControl, errors.New("Expected paging Control, it was not found."))
+			return allResults, NewLDAPError(ErrorMissingControl, "Expected paging Control, it was not found.")
 		}
 		pagingControl.SetCookie(pagingResponsePacket.(*ControlPaging).Cookie)
 		if len(pagingControl.Cookie) == 0 {
@@ -169,7 +168,7 @@ func (l *LDAPConnection) SearchWithPaging(searchRequest *SearchRequest, pagingSi
 
 //ProcessDiscreteResult handles an individual result from a server. Member of the
 //SearchResultHandler interface. Results are placed into a SearchResult.
-func (sr *SearchResult) ProcessDiscreteResult(dsr *DiscreteSearchResult, connInfo *ConnectionInfo) (stopProcessing bool, err *Error) {
+func (sr *SearchResult) ProcessDiscreteResult(dsr *DiscreteSearchResult, connInfo *ConnectionInfo) (stopProcessing bool, err error) {
 	switch dsr.SearchResultType {
 	case SearchResultEntry:
 		sr.Entries = append(sr.Entries, dsr.Entry)
@@ -184,7 +183,7 @@ func (sr *SearchResult) ProcessDiscreteResult(dsr *DiscreteSearchResult, connInf
 }
 
 //Search is a blocking search. nil error on success.
-func (l *LDAPConnection) Search(searchRequest *SearchRequest) (*SearchResult, *Error) {
+func (l *LDAPConnection) Search(searchRequest *SearchRequest) (*SearchResult, error) {
 	result := &SearchResult{
 		Entries:   make([]*Entry, 0),
 		Referrals: make([]string, 0),
@@ -197,7 +196,7 @@ func (l *LDAPConnection) Search(searchRequest *SearchRequest) (*SearchResult, *E
 	return result, nil
 }
 
-func encodeSearchRequest(req *SearchRequest) (*ber.Packet, *Error) {
+func encodeSearchRequest(req *SearchRequest) (*ber.Packet, error) {
 	searchRequest := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ApplicationSearchRequest, nil, "Search Request")
 	searchRequest.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, req.BaseDN, "Base DN"))
 	searchRequest.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimative, ber.TagEnumerated, uint64(req.Scope), "Scope"))
@@ -227,7 +226,7 @@ func (req *SearchRequest) AddControl(control Control) {
 }
 
 // SearchResult decoded to Entry,Controls,Referral
-func decodeSearchResponse(packet *ber.Packet) (discreteSearchResult *DiscreteSearchResult, err *Error) {
+func decodeSearchResponse(packet *ber.Packet) (discreteSearchResult *DiscreteSearchResult, err error) {
 	discreteSearchResult = new(DiscreteSearchResult)
 	switch packet.Children[1].Tag {
 	case SearchResultEntry:
@@ -248,7 +247,7 @@ func decodeSearchResponse(packet *ber.Packet) (discreteSearchResult *DiscreteSea
 		discreteSearchResult.SearchResultType = SearchResultDone
 		result_code, result_description := getLDAPResultCode(packet)
 		if result_code != 0 {
-			return discreteSearchResult, NewError(result_code, errors.New(result_description))
+			return discreteSearchResult, NewLDAPError(result_code, result_description)
 		}
 
 		if len(packet.Children) == 3 {
@@ -274,10 +273,10 @@ func decodeSearchResponse(packet *ber.Packet) (discreteSearchResult *DiscreteSea
 		}
 		return discreteSearchResult, nil
 	}
-	return nil, NewError(ErrorDecoding, errors.New("Couldn't decode search result."))
+	return nil, NewLDAPError(ErrorDecoding, "Couldn't decode search result.")
 }
 
-func sendError(errChannel chan<- *Error, err *Error) *Error {
+func sendError(errChannel chan<- error, err error) error {
 	if errChannel != nil {
 		go func() {
 			errChannel <- err
@@ -291,14 +290,14 @@ func sendError(errChannel chan<- *Error, err *Error) *Error {
 //	SearchResultHandler, an interface, implemeneted by SearchResult.
 //	Handles the discreteSearchResults. Can provide own implemented to work on
 //	a result by result basis.
-//	errorChan - if nil then blocking, else *Error returned via channel upon completion.
-//	returns *Error if blocking.
+//	errorChan - if nil then blocking, else error returned via channel upon completion.
+//	returns error if blocking.
 func (l *LDAPConnection) SearchWithHandler(
-	searchRequest *SearchRequest, resultHandler SearchResultHandler, errorChan chan<- *Error,
-) *Error {
+	searchRequest *SearchRequest, resultHandler SearchResultHandler, errorChan chan<- error,
+) error {
 	messageID, ok := l.nextMessageID()
 	if !ok {
-		err := NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+		err := NewLDAPError(ErrorClosing, "MessageID channel is closed.")
 		return sendError(errorChan, err)
 	}
 
@@ -323,7 +322,7 @@ func (l *LDAPConnection) SearchWithHandler(
 		return sendError(errorChan, err)
 	}
 	if channel == nil {
-		err = NewError(ErrorNetwork, errors.New("Could not send message"))
+		err = NewLDAPError(ErrorNetwork, "Could not send message")
 		return sendError(errorChan, err)
 	}
 	defer l.finishMessage(messageID)
@@ -344,17 +343,16 @@ func (l *LDAPConnection) SearchWithHandler(
 		}
 
 		if !ok {
-			return NewError(ErrorClosing, errors.New("Response Channel Closed"))
+			return NewLDAPError(ErrorClosing, "Response Channel Closed")
 		}
 
 		if packet == nil {
-			err = NewError(ErrorNetwork, errors.New("Could not retrieve message"))
+			err = NewLDAPError(ErrorNetwork, "Could not retrieve message")
 			return sendError(errorChan, err)
 		}
 
 		if l.Debug {
 			if err := addLDAPDescriptions(packet); err != nil {
-				err = NewError(ErrorDebugging, err)
 				return sendError(errorChan, err)
 			}
 			ber.PrintPacket(packet)

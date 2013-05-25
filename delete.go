@@ -5,7 +5,6 @@
 package ldap
 
 import (
-	"errors"
 	"github.com/mavricknz/asn1-ber"
 )
 
@@ -22,10 +21,10 @@ func (req *DeleteRequest) RecordType() uint8 {
 Simple delete
 */
 
-func (l *LDAPConnection) Delete(delReq *DeleteRequest) (error *Error) {
+func (l *LDAPConnection) Delete(delReq *DeleteRequest) (error error) {
 	messageID, ok := l.nextMessageID()
 	if !ok {
-		return NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+		return NewLDAPError(ErrorClosing, "MessageID channel is closed.")
 	}
 	encodedDelete := ber.NewString(ber.ClassApplication, ber.TypePrimative, ApplicationDelRequest, delReq.DN, ApplicationMap[ApplicationDelRequest])
 

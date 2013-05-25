@@ -6,7 +6,6 @@
 package ldap
 
 import (
-	"errors"
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 	"io/ioutil"
@@ -175,10 +174,10 @@ var LDAPResultCodeMap = map[uint8]string{
 }
 
 // Adds descriptions to an LDAP Response packet for debugging
-func addLDAPDescriptions(packet *ber.Packet) (err *Error) {
+func addLDAPDescriptions(packet *ber.Packet) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = NewError(ErrorDebugging, errors.New("Cannot process packet to add descriptions"))
+			err = NewLDAPError(ErrorDebugging, "Cannot process packet to add descriptions")
 		}
 	}()
 	packet.Description = "LDAP Response"
@@ -289,10 +288,10 @@ func addDefaultLDAPResponseDescriptions(packet *ber.Packet) {
 	}
 }
 
-func DebugBinaryFile(FileName string) *Error {
+func DebugBinaryFile(FileName string) error {
 	file, err := ioutil.ReadFile(FileName)
 	if err != nil {
-		return NewError(ErrorDebugging, err)
+		return err
 	}
 	ber.PrintBytes(file, "")
 	packet := ber.DecodePacket(file)
@@ -302,17 +301,17 @@ func DebugBinaryFile(FileName string) *Error {
 	return nil
 }
 
-type Error struct {
-	Err        error
+type LDAPError struct {
+	sText      string
 	ResultCode uint8
 }
 
-func (e *Error) Error() string {
-	return fmt.Sprintf("LDAP Result Code %d %q: %s", e.ResultCode, LDAPResultCodeMap[e.ResultCode], e.Err.Error())
+func (e *LDAPError) Error() string {
+	return fmt.Sprintf("LDAP Result Code %d %q: %s", e.ResultCode, LDAPResultCodeMap[e.ResultCode], e.sText)
 }
 
-func NewError(ResultCode uint8, Err error) *Error {
-	return &Error{ResultCode: ResultCode, Err: Err}
+func NewLDAPError(resultCode uint8, sText string) error {
+	return &LDAPError{ResultCode: resultCode, sText: sText}
 }
 
 func getLDAPResultCode(p *ber.Packet) (code uint8, description string) {

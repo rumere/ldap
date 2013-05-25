@@ -5,7 +5,6 @@
 package ldap
 
 import (
-	"errors"
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 	"time"
@@ -15,7 +14,7 @@ import (
 // opPacket - the operation BER encoded Packet e.g. Search/Modify/Delete/Compare
 // controls - the controls to add to the Request
 // returns the BER encoded LDAP request or an Error
-func requestBuildPacket(messageID uint64, opPacket *ber.Packet, controls []Control) (p *ber.Packet, err *Error) {
+func requestBuildPacket(messageID uint64, opPacket *ber.Packet, controls []Control) (p *ber.Packet, err error) {
 
 	p = ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Request")
 	p.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimative, ber.TagInteger, messageID, "MessageID"))
@@ -31,7 +30,7 @@ func requestBuildPacket(messageID uint64, opPacket *ber.Packet, controls []Contr
 	return
 }
 
-func (l *LDAPConnection) sendReqRespPacket(messageID uint64, packet *ber.Packet) *Error {
+func (l *LDAPConnection) sendReqRespPacket(messageID uint64, packet *ber.Packet) error {
 
 	if l.Debug {
 		ber.PrintPacket(packet)
@@ -44,7 +43,7 @@ func (l *LDAPConnection) sendReqRespPacket(messageID uint64, packet *ber.Packet)
 	}
 
 	if channel == nil {
-		return NewError(ErrorNetwork, errors.New("Could not send message"))
+		return NewLDAPError(ErrorNetwork, "Could not send message")
 	}
 
 	defer l.finishMessage(messageID)
@@ -63,17 +62,17 @@ func (l *LDAPConnection) sendReqRespPacket(messageID uint64, packet *ber.Packet)
 	select {
 	case responsePacket, ok = <-channel:
 		if !ok {
-			return NewError(ErrorClosing, errors.New("Response Channel Closed"))
+			return NewLDAPError(ErrorClosing, "Response Channel Closed")
 		}
 	case <-time.After(timeout):
 		if l.AbandonMessageOnReadTimeout {
 			err = l.Abandon(messageID)
 			if err != nil {
-				return NewError(ErrorNetwork,
-					errors.New("Timeout waiting for Message and error on Abandon"))
+				return NewLDAPError(ErrorNetwork,
+					"Timeout waiting for Message and error on Abandon")
 			}
 		}
-		return NewError(ErrorNetwork, errors.New("Timeout waiting for Message"))
+		return NewLDAPError(ErrorNetwork, "Timeout waiting for Message")
 	}
 
 	if l.Debug {
@@ -81,12 +80,12 @@ func (l *LDAPConnection) sendReqRespPacket(messageID uint64, packet *ber.Packet)
 	}
 
 	if responsePacket == nil {
-		return NewError(ErrorNetwork, errors.New("Could not retrieve message"))
+		return NewLDAPError(ErrorNetwork, "Could not retrieve message")
 	}
 
 	if l.Debug {
 		if err := addLDAPDescriptions(responsePacket); err != nil {
-			return NewError(ErrorDebugging, err)
+			return err
 		}
 		ber.PrintPacket(responsePacket)
 	}
@@ -94,7 +93,7 @@ func (l *LDAPConnection) sendReqRespPacket(messageID uint64, packet *ber.Packet)
 	result_code, result_description := getLDAPResultCode(responsePacket)
 
 	if result_code != 0 {
-		return NewError(result_code, errors.New(result_description))
+		return NewLDAPError(result_code, result_description)
 	}
 
 	if l.Debug {

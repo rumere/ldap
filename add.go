@@ -5,7 +5,6 @@
 package ldap
 
 import (
-	"errors"
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 )
@@ -19,10 +18,10 @@ func (req *AddRequest) RecordType() uint8 {
 	return AddRecord
 }
 
-func (l *LDAPConnection) Add(req *AddRequest) *Error {
+func (l *LDAPConnection) Add(req *AddRequest) error {
 	messageID, ok := l.nextMessageID()
 	if !ok {
-		return NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+		return NewLDAPError(ErrorClosing, "messageID channel is closed.")
 	}
 
 	encodedAdd, err := encodeAddRequest(req)
@@ -49,7 +48,7 @@ func (l *LDAPConnection) Add(req *AddRequest) *Error {
         type       AttributeDescription,
         vals       SET OF value AttributeValue } // vals is not empty
 */
-func encodeAddRequest(addReq *AddRequest) (*ber.Packet, *Error) {
+func encodeAddRequest(addReq *AddRequest) (*ber.Packet, error) {
 	addPacket := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ApplicationAddRequest, nil, ApplicationMap[ApplicationAddRequest])
 	addPacket.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, addReq.Entry.DN, "LDAP DN"))
 
@@ -59,7 +58,7 @@ func encodeAddRequest(addReq *AddRequest) (*ber.Packet, *Error) {
 		attribute := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "Attribute")
 		attribute.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, attr.Name, "Attribute Desc"))
 		if len(attr.Values) == 0 {
-			return nil, NewError(ErrorEncoding, errors.New("Attribute "+attr.Name+" had no values."))
+			return nil, NewLDAPError(ErrorEncoding, "attribute "+attr.Name+" had no values.")
 		}
 		valuesSet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSet, nil, "Attribute Value Set")
 		for _, val := range attr.Values {
