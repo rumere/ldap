@@ -13,19 +13,19 @@ func TestLdifWriter(t *testing.T) {
 	reader := strings.NewReader(simpleLDIF)
 	lr, err := NewLDIFReader(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf(err.Error())
 	}
 
 	buf := new(bytes.Buffer)
 	lw, lwerr := NewLDIFWriter(buf)
 	if lwerr != nil {
-		t.Error(err)
+		t.Errorf(err.Error())
 	}
 
 	for {
 		record, lerr := lr.ReadLDIFEntry()
 		if lerr != nil {
-			t.Errorf("Error reading LDIF: " + lerr)
+			t.Error("Error reading LDIF: " + lerr.Error())
 			break
 		}
 		if record == nil {
@@ -34,7 +34,7 @@ func TestLdifWriter(t *testing.T) {
 
 		err = lw.WriteLDIFRecord(record)
 		if err != nil {
-			t.Error(err)
+			t.Errorf(err.Error())
 		}
 		fmt.Print(buf.String())
 		buf.Truncate(0)
