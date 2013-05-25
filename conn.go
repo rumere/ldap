@@ -7,7 +7,6 @@ package ldap
 
 import (
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 	"net"
@@ -52,7 +51,7 @@ type LDAPConnection struct {
 
 // Connect connects using information in LDAPConnection.
 // LDAPConnection should be populated with connection information.
-func (l *LDAPConnection) Connect() *Error {
+func (l *LDAPConnection) Connect() error {
 	l.chanResults = map[uint64]chan *ber.Packet{}
 	l.chanProcessMessage = make(chan *messagePacket)
 	l.chanMessageID = make(chan uint64)
@@ -67,14 +66,14 @@ func (l *LDAPConnection) Connect() *Error {
 		}
 
 		if err != nil {
-			return NewError(ErrorNetwork, err)
+			return err
 		}
 
 		if l.IsSSL {
 			tlsConn := tls.Client(c, l.TlsConfig)
 			err = tlsConn.Handshake()
 			if err != nil {
-				return NewError(ErrorNetwork, err)
+				return err
 			}
 			l.conn = tlsConn
 		} else {
@@ -86,7 +85,7 @@ func (l *LDAPConnection) Connect() *Error {
 	if l.IsTLS {
 		err := l.startTLS()
 		if err != nil {
-			return NewError(ErrorNetwork, err)
+			return err
 		}
 	}
 	return nil
@@ -106,7 +105,7 @@ func (l *LDAPConnection) start() {
 }
 
 // Close closes the connection.
-func (l *LDAPConnection) Close() *Error {
+func (l *LDAPConnection) Close() error {
 	if l.Debug {
 		fmt.Println("Starting Close().")
 	}
@@ -124,14 +123,14 @@ func (l *LDAPConnection) nextMessageID() (messageID uint64, ok bool) {
 }
 
 // StartTLS sends the command to start a TLS session and then creates a new TLS Client
-func (l *LDAPConnection) startTLS() *Error {
+func (l *LDAPConnection) startTLS() error {
 	messageID, ok := l.nextMessageID()
 	if !ok {
-		return NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+		return NewLDAPError(ErrorClosing, "MessageID channel is closed.")
 	}
 
 	if l.IsSSL {
-		return NewError(ErrorNetwork, errors.New("Already encrypted"))
+		return NewLDAPError(ErrorNetwork, "Already encrypted")
 	}
 
 	tlsRequest := encodeTLSRequest()
@@ -147,9 +146,9 @@ func (l *LDAPConnection) startTLS() *Error {
 	}
 
 	conn := tls.Client(l.conn, nil)
-	stderr := conn.Handshake()
-	if stderr != nil {
-		return NewError(ErrorNetwork, stderr)
+	err = conn.Handshake()
+	if err != nil {
+		return err
 	}
 	l.IsSSL = true
 	l.conn = conn
@@ -177,19 +176,19 @@ type messagePacket struct {
 	Channel   chan *ber.Packet
 }
 
-func (l *LDAPConnection) getNewResultChannel(message_id uint64) (out chan *ber.Packet, err *Error) {
+func (l *LDAPConnection) getNewResultChannel(message_id uint64) (out chan *ber.Packet, err error) {
 	// as soon as a channel is requested add to chanResults to never miss
 	// on cleanup.
 	l.lockChanResults.Lock()
 	defer l.lockChanResults.Unlock()
 
 	if l.chanResults == nil {
-		return nil, NewError(ErrorClosing, errors.New("Conenction closing/closed"))
+		return nil, NewLDAPError(ErrorClosing, "Connection closing/closed")
 	}
 
 	if _, ok := l.chanResults[message_id]; ok {
 		errStr := fmt.Sprintf("chanResults already allocated, message_id: %d", message_id)
-		return nil, NewError(ErrorUnknown, errors.New(errStr))
+		return nil, NewLDAPError(ErrorUnknown, errStr)
 	}
 
 	out = make(chan *ber.Packet, ResultChanBufferSize)
@@ -197,7 +196,7 @@ func (l *LDAPConnection) getNewResultChannel(message_id uint64) (out chan *ber.P
 	return
 }
 
-func (l *LDAPConnection) sendMessage(p *ber.Packet) (out chan *ber.Packet, err *Error) {
+func (l *LDAPConnection) sendMessage(p *ber.Packet) (out chan *ber.Packet, err error) {
 	message_id := p.Children[0].Value.(uint64)
 	// sendProcessMessage may not process a message on shutdown
 	// getNewResultChannel adds id/chan to chan results
@@ -219,7 +218,7 @@ func (l *LDAPConnection) processMessages() {
 	defer func() {
 		// Close all channels, connection and quit.
 		// Use closeLock to stop MessageRequests
-		// and l.connected to stop any future MessageRequests. 
+		// and l.connected to stop any future MessageRequests.
 		l.closeLock.Lock()
 		defer l.closeLock.Unlock()
 		l.connected = false
@@ -250,7 +249,7 @@ func (l *LDAPConnection) processMessages() {
 					n, err := l.conn.Write(buf)
 					if err != nil {
 						if l.Debug {
-							fmt.Printf("Error Sending Message: %s\n", err.Error())
+							fmt.Printf("Error Sending Message: %s\n", err)
 						}
 						return
 					}
@@ -302,7 +301,7 @@ func (l *LDAPConnection) reader() {
 		p, err := ber.ReadPacket(l.conn)
 		if err != nil {
 			if l.Debug {
-				fmt.Printf("ldap.reader: %s\n", err.Error())
+				fmt.Printf("ldap.reader: %s\n", err)
 			}
 			return
 		}
