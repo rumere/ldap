@@ -6,9 +6,7 @@ package ldap
 
 import (
 	"fmt"
-	//"github.com/mavricknz/asn1-ber"
 	"testing"
-	//"ldap"
 )
 
 /*
