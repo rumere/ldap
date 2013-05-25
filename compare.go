@@ -5,7 +5,6 @@
 package ldap
 
 import (
-	"errors"
 	"github.com/mavricknz/asn1-ber"
 )
 
@@ -26,28 +25,34 @@ type CompareRequest struct {
 	Controls []Control
 }
 
-func (l *LDAPConnection) Compare(req *CompareRequest) *Error {
+func (l *LDAPConnection) Compare(req *CompareRequest) (bool, error) {
 	messageID, ok := l.nextMessageID()
 	if !ok {
-		return NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+		return false, NewLDAPError(ErrorClosing, "MessageID channel is closed.")
 	}
 
 	encodedCompare, err := encodeCompareRequest(req)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	packet, err := requestBuildPacket(messageID, encodedCompare, req.Controls)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// CompareTrue = 6, CompareFalse = 5
 	// returns an "Error"
-	return l.sendReqRespPacket(messageID, packet)
+	err = l.sendReqRespPacket(messageID, packet)
+	if lerr, ok := err.(*LDAPError); ok {
+		return lerr.ResultCode == LDAPResultCompareTrue, nil
+	} else {
+		return false, err
+	}
+	//return l.sendReqRespPacket(messageID, packet)
 }
 
-func encodeCompareRequest(req *CompareRequest) (*ber.Packet, *Error) {
+func encodeCompareRequest(req *CompareRequest) (*ber.Packet, error) {
 	p := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ApplicationCompareRequest, nil, ApplicationMap[ApplicationCompareRequest])
 	p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, req.DN, "LDAP DN"))
 	ava, err := encodeItem([]string{req.Name, "=", req.Value})
