@@ -56,7 +56,7 @@ func TestSearchTimeoutSSL(t *testing.T) {
 
 	err := l.Connect()
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 		return
 	}
 	defer l.Close()
