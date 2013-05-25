@@ -5,7 +5,6 @@
 package ldap
 
 import (
-	"errors"
 	"github.com/mavricknz/asn1-ber"
 )
 
@@ -26,10 +25,10 @@ type ModDnRequest struct {
 }
 
 //Untested.
-func (l *LDAPConnection) ModDn(req *ModDnRequest) *Error {
+func (l *LDAPConnection) ModDn(req *ModDnRequest) error {
 	messageID, ok := l.nextMessageID()
 	if !ok {
-		return NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+		return NewLDAPError(ErrorClosing, "MessageID channel is closed.")
 	}
 
 	encodedModDn := encodeModDnRequest(req)

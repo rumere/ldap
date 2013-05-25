@@ -55,7 +55,6 @@ package ldap
 
 import (
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 	"regexp"
@@ -141,18 +140,18 @@ func init() {
 	escapeFilterRegex = regexp.MustCompile(`([\\\(\)\*\0-\37\177-\377])`)
 }
 
-func CompileFilter(filter string) (*ber.Packet, *Error) {
+func CompileFilter(filter string) (*ber.Packet, error) {
 	if len(filter) == 0 {
-		return nil, NewError(ErrorFilterCompile, errors.New("Filter of zero length"))
+		return nil, NewLDAPError(ErrorFilterCompile, "Filter of zero length")
 	}
 	if filter[0] != '(' {
-		return nil, NewError(ErrorFilterCompile, errors.New("Filter does not start with '('"))
+		return nil, NewLDAPError(ErrorFilterCompile, "Filter does not start with '('")
 	}
 	return filterParse(filter)
 }
 
-func filterParse(filter string) (*ber.Packet, *Error) {
-	var err *Error
+func filterParse(filter string) (*ber.Packet, error) {
+	var err error
 	var pTmp1 *ber.Packet
 	pos := 0
 	bracketCount := 0
@@ -177,9 +176,9 @@ func filterParse(filter string) (*ber.Packet, *Error) {
 			continue
 		} else if matches := endRegex.FindStringSubmatch(filter[pos:]); len(matches) != 0 {
 			if bracketCount <= 0 {
-				return nil, NewError(ErrorFilterCompile,
-					errors.New("Finished compiling filter with extra at end :"+
-						fmt.Sprint(filter[pos:])))
+				return nil, NewLDAPError(ErrorFilterCompile,
+					"Finished compiling filter with extra at end :"+
+						fmt.Sprint(filter[pos:]))
 			}
 			bracketCount--
 			pos += len(matches[0])
@@ -208,14 +207,14 @@ func filterParse(filter string) (*ber.Packet, *Error) {
 	//	ber.PrintPacket(p[0])
 	//}
 	if len(filter[pos:]) > 0 {
-		return nil, NewError(ErrorFilterCompile, errors.New(filter+" : Error compiling filter, invalid filter : "+fmt.Sprint(filter[pos:])))
+		return nil, NewLDAPError(ErrorFilterCompile, filter+" : Error compiling filter, invalid filter : "+fmt.Sprint(filter[pos:]))
 	}
 	return p[0], nil
 }
 
-func filterEncode(opType uint64, value []string) (*ber.Packet, *Error) {
+func filterEncode(opType uint64, value []string) (*ber.Packet, error) {
 	var p *ber.Packet = nil
-	var err *Error
+	var err error
 
 	// condense and/or/not into one case.
 	switch opType {
@@ -233,7 +232,7 @@ func filterEncode(opType uint64, value []string) (*ber.Packet, *Error) {
 	return p, err
 }
 
-func encodeItem(attrOpVal []string) (*ber.Packet, *Error) {
+func encodeItem(attrOpVal []string) (*ber.Packet, error) {
 	attr, op, val := attrOpVal[0], attrOpVal[1], attrOpVal[2]
 	if FilterDebug {
 		fmt.Println(attr, op, val)
@@ -269,7 +268,7 @@ SubstringFilter ::= SEQUENCE {
              final          [2] AssertionValue } }
 */
 
-func encodeSubStringMatch(attr, value string) (*ber.Packet, *Error) {
+func encodeSubStringMatch(attr, value string) (*ber.Packet, error) {
 	p := ber.Encode(ber.ClassContext, ber.TypeConstructed,
 		FilterSubstrings, nil, FilterMap[FilterSubstrings])
 	p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, attr, "type"))
@@ -289,8 +288,7 @@ func encodeSubStringMatch(attr, value string) (*ber.Packet, *Error) {
 			if FilterDebug {
 				fmt.Println("Did not match filter")
 			}
-			return nil, NewError(ErrorFilterCompile,
-				errors.New("Did not match filter."))
+			return nil, NewLDAPError(ErrorFilterCompile, "Did not match filter.")
 		}
 		// attr=*XXX
 		if len(matches) == 0 {
@@ -339,7 +337,7 @@ MatchingRuleAssertion ::= SEQUENCE {
             dnAttributes    [4] BOOLEAN DEFAULT FALSE }
 */
 
-func encodeExtensibleMatch(attr, value string) (*ber.Packet, *Error) {
+func encodeExtensibleMatch(attr, value string) (*ber.Packet, error) {
 	//TODO make cacheable
 	extenseRegex := regexp.MustCompile(`^([-;\d\w]*)(:dn)?(:(\w+|[.\d]+))?$`)
 	p := ber.Encode(ber.ClassContext, ber.TypeConstructed,
@@ -367,8 +365,8 @@ func encodeExtensibleMatch(attr, value string) (*ber.Packet, *Error) {
 			p.AppendChild(pdn)
 		}
 	} else {
-		return nil, NewError(ErrorFilterCompile,
-			errors.New("Invalid Extensible attr : "+attr))
+		return nil, NewLDAPError(ErrorFilterCompile,
+			"Invalid Extensible attr : "+attr)
 	}
 	if FilterDebug {
 		fmt.Println(hex.Dump(p.Bytes()))
@@ -376,10 +374,10 @@ func encodeExtensibleMatch(attr, value string) (*ber.Packet, *Error) {
 	return p, nil
 }
 
-func DecompileFilter(packet *ber.Packet) (ret string, err *Error) {
+func DecompileFilter(packet *ber.Packet) (ret string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = NewError(ErrorFilterDecompile, errors.New("Error decompiling filter"))
+			err = NewLDAPError(ErrorFilterDecompile, "Error decompiling filter")
 		}
 	}()
 	ret = "("
@@ -481,10 +479,10 @@ func EscapeFilterValue(filter string) string {
 	return string(repl)
 }
 
-func AttributeValueAssertion(attr, op, value string) (*ber.Packet, *Error) {
+func AttributeValueAssertion(attr, op, value string) (*ber.Packet, error) {
 	filterComp, ok := FilterComponent[op]
 	if !ok {
-		return nil, NewError(ErrorEncoding, errors.New("Invalid Assertion Op."))
+		return nil, NewLDAPError(ErrorEncoding, "Invalid Assertion Op.")
 	}
 
 	// AttributeValueAssertion seq of the right op.

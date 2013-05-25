@@ -21,7 +21,7 @@ func TestConnect(t *testing.T) {
 	l := NewLDAPConnection(ldap_server, ldap_port)
 	err := l.Connect()
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 		return
 	}
 	defer l.Close()
@@ -33,7 +33,7 @@ func TestSearch(t *testing.T) {
 	l := NewLDAPConnection(ldap_server, ldap_port)
 	err := l.Connect()
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 		return
 	}
 	defer l.Close()
@@ -47,7 +47,7 @@ func TestSearch(t *testing.T) {
 
 	sr, err := l.Search(search_request)
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 		return
 	}
 
@@ -59,14 +59,14 @@ func TestSearchWithPaging(t *testing.T) {
 	l := NewLDAPConnection(ldap_server, ldap_port)
 	err := l.Connect()
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 		return
 	}
 	defer l.Close()
 
 	err = l.Bind("", "")
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 		return
 	}
 
@@ -78,7 +78,7 @@ func TestSearchWithPaging(t *testing.T) {
 		nil)
 	sr, err := l.SearchWithPaging(search_request, 5)
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 		return
 	}
 
@@ -95,7 +95,7 @@ func testMultiGoroutineSearch(t *testing.T, l *LDAPConnection, results chan *Sea
 	sr, err := l.Search(search_request)
 
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 		results <- nil
 		return
 	}
@@ -108,7 +108,7 @@ func TestMultiGoroutineSearch(t *testing.T) {
 	l := NewLDAPConnection(ldap_server, ldap_port)
 	err := l.Connect()
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 		return
 	}
 	defer l.Close()

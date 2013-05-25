@@ -16,7 +16,7 @@ func TestSearchTimeout(t *testing.T) {
 	err := l.Connect()
 
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 		return
 	}
 	if l == nil {
@@ -34,7 +34,7 @@ func TestSearchTimeout(t *testing.T) {
 
 	sr, err := l.Search(search_request)
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 		return
 	}
 	fmt.Printf("TestSearchTimeout: %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))
@@ -70,7 +70,7 @@ func TestSearchTimeoutSSL(t *testing.T) {
 
 	sr, err := l.Search(search_request)
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 		return
 	}
 	fmt.Printf("TestSearchTimeoutSSL: %s -> num of entries = %d\n", search_request.Filter, len(sr.Entries))

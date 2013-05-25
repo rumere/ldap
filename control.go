@@ -6,8 +6,6 @@
 package ldap
 
 import (
-	//"encoding/hex"
-	"errors"
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 )
@@ -58,7 +56,7 @@ var ControlTypeMap = map[string]string{
 	ControlTypeVlvResponse:             "VlvResponse",
 }
 
-var ControlDecodeMap = map[string]func(p *ber.Packet) (Control, *Error){
+var ControlDecodeMap = map[string]func(p *ber.Packet) (Control, error){
 	ControlTypeServerSideSortResponse: NewControlServerSideSortResponse,
 	ControlTypePaging:                 NewControlPagingFromPacket,
 	ControlTypeVlvResponse:            NewControlVlvResponse,
@@ -66,7 +64,7 @@ var ControlDecodeMap = map[string]func(p *ber.Packet) (Control, *Error){
 
 // Control Interface
 type Control interface {
-	Encode() (*ber.Packet, *Error)
+	Encode() (*ber.Packet, error)
 	GetControlType() string
 	String() string
 }
@@ -77,7 +75,7 @@ type ControlString struct {
 	ControlValue string
 }
 
-func NewControlStringFromPacket(p *ber.Packet) (Control, *Error) {
+func NewControlStringFromPacket(p *ber.Packet) (Control, error) {
 	controlType, criticality, value := decodeControlTypeAndCrit(p)
 	c := new(ControlString)
 	c.ControlType = controlType
@@ -90,7 +88,7 @@ func (c *ControlString) GetControlType() string {
 	return c.ControlType
 }
 
-func (c *ControlString) Encode() (p *ber.Packet, err *Error) {
+func (c *ControlString) Encode() (p *ber.Packet, err error) {
 	p = ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "Control")
 	p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, c.ControlType, "Control Type ("+ControlTypeMap[c.ControlType]+")"))
 	if c.Criticality {
@@ -115,7 +113,7 @@ func NewControlPaging(PagingSize uint32) *ControlPaging {
 	return &ControlPaging{PagingSize: PagingSize}
 }
 
-func NewControlPagingFromPacket(p *ber.Packet) (Control, *Error) {
+func NewControlPagingFromPacket(p *ber.Packet) (Control, error) {
 	_, _, value := decodeControlTypeAndCrit(p)
 	value.Description += " (Paging)"
 	c := new(ControlPaging)
@@ -140,7 +138,7 @@ func (c *ControlPaging) GetControlType() string {
 	return ControlTypePaging
 }
 
-func (c *ControlPaging) Encode() (p *ber.Packet, err *Error) {
+func (c *ControlPaging) Encode() (p *ber.Packet, err error) {
 	p = ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "Control")
 	p.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimative, ber.TagOctetString, ControlTypePaging, "Control Type ("+ControlTypeMap[ControlTypePaging]+")"))
 
@@ -251,7 +249,7 @@ func NewControlString(ControlType string, Criticality bool, ControlValue string)
 	}
 }
 
-func encodeControls(Controls []Control) (*ber.Packet, *Error) {
+func encodeControls(Controls []Control) (*ber.Packet, error) {
 	p := ber.Encode(ber.ClassContext, ber.TypeConstructed, 0, nil, "Controls")
 	for _, control := range Controls {
 		pack, err := control.Encode()
@@ -308,15 +306,15 @@ func NewControlMatchedValuesRequest(criticality bool, filter string) *ControlMat
 	return &ControlMatchedValuesRequest{criticality, filter}
 }
 
-func (c *ControlMatchedValuesRequest) Decode(p *ber.Packet) (*Control, *Error) {
-	return nil, NewError(ErrorDecoding, errors.New("Decode of Control unsupported."))
+func (c *ControlMatchedValuesRequest) Decode(p *ber.Packet) (*Control, error) {
+	return nil, NewLDAPError(ErrorDecoding, "Decode of Control unsupported.")
 }
 
 func (c *ControlMatchedValuesRequest) GetControlType() string {
 	return ControlTypeMatchedValuesRequest
 }
 
-func (c *ControlMatchedValuesRequest) Encode() (p *ber.Packet, err *Error) {
+func (c *ControlMatchedValuesRequest) Encode() (p *ber.Packet, err error) {
 	p = ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "ControlMatchedValuesRequest")
 	p.AppendChild(
 		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
@@ -374,15 +372,15 @@ func NewControlServerSideSortRequest(sortKeyList []ServerSideSortAttrRuleOrder, 
 	return &ControlServerSideSortRequest{sortKeyList, criticality}
 }
 
-func (c *ControlServerSideSortRequest) Decode(p *ber.Packet) (*Control, *Error) {
-	return nil, NewError(ErrorDecoding, errors.New("Decode of Control unsupported."))
+func (c *ControlServerSideSortRequest) Decode(p *ber.Packet) (*Control, error) {
+	return nil, NewLDAPError(ErrorDecoding, "Decode of Control unsupported.")
 }
 
 func (c *ControlServerSideSortRequest) GetControlType() string {
 	return ControlTypeServerSideSortRequest
 }
 
-func (c *ControlServerSideSortRequest) Encode() (p *ber.Packet, err *Error) {
+func (c *ControlServerSideSortRequest) Encode() (p *ber.Packet, err error) {
 	p = ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "ControlServerSideSortRequest")
 	p.AppendChild(
 		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
@@ -458,7 +456,7 @@ type ControlVlvRequest struct {
 	ContextID          []byte
 }
 
-func (c *ControlVlvRequest) Encode() (*ber.Packet, *Error) {
+func (c *ControlVlvRequest) Encode() (*ber.Packet, error) {
 	p := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "ControlVlvRequest")
 	p.AppendChild(
 		ber.NewString(ber.ClassUniversal, ber.TypePrimative,
@@ -485,7 +483,7 @@ func (c *ControlVlvRequest) Encode() (*ber.Packet, *Error) {
 		target = ber.NewString(ber.ClassContext, ber.TypePrimative, 1, c.GreaterThanOrEqual, "GreaterThanOrEqual")
 	}
 	if target == nil {
-		return nil, NewError(ErrorEncoding, errors.New("VLV target equal to nil"))
+		return nil, NewLDAPError(ErrorEncoding, "VLV target equal to nil")
 	}
 	vlvSeq.AppendChild(beforeCount)
 	vlvSeq.AppendChild(afterCount)
@@ -535,7 +533,7 @@ func (c *ControlVlvRequest) String() string {
 type ControlServerSideSortResponse struct {
 	AttributeName string // Optional
 	Criticality   bool
-	Err           *Error
+	Err           error
 }
 
 //SortResult ::= SEQUENCE {
@@ -561,7 +559,7 @@ type ControlServerSideSortResponse struct {
 //       other                    (80)
 //       },
 //   attributeType [0] AttributeDescription OPTIONAL }
-func NewControlServerSideSortResponse(p *ber.Packet) (Control, *Error) {
+func NewControlServerSideSortResponse(p *ber.Packet) (Control, error) {
 	c := new(ControlServerSideSortResponse)
 	_, criticality, value := decodeControlTypeAndCrit(p)
 	c.Criticality = criticality
@@ -578,7 +576,7 @@ func NewControlServerSideSortResponse(p *ber.Packet) (Control, *Error) {
 
 	value.Children[0].Description = "SortResult"
 	errNum := uint8(value.Children[0].Value.(uint64))
-	c.Err = NewError(errNum, errors.New(LDAPResultCodeMap[errNum]))
+	c.Err = NewLDAPError(errNum, "")
 
 	if len(value.Children) == 2 {
 		value.Children[1].Description = "Attribute Name"
@@ -588,8 +586,8 @@ func NewControlServerSideSortResponse(p *ber.Packet) (Control, *Error) {
 	return c, nil
 }
 
-func (c *ControlServerSideSortResponse) Encode() (p *ber.Packet, err *Error) {
-	return nil, NewError(ErrorEncoding, errors.New("Encode of Control unsupported."))
+func (c *ControlServerSideSortResponse) Encode() (p *ber.Packet, err error) {
+	return nil, NewLDAPError(ErrorEncoding, "Encode of Control unsupported.")
 }
 
 func (c *ControlServerSideSortResponse) GetControlType() string {
@@ -602,7 +600,7 @@ func (c *ControlServerSideSortResponse) String() string {
 		ControlTypeServerSideSortResponse,
 		c.Criticality,
 		c.AttributeName,
-		c.Err.ResultCode,
+		c.Err.(*LDAPError).ResultCode,
 	)
 }
 
@@ -614,7 +612,7 @@ type ControlVlvResponse struct {
 	Criticality    bool
 	TargetPosition uint64
 	ContentCount   uint64
-	Err            *Error // VirtualListViewResult
+	Err            error // VirtualListViewResult
 	ContextID      string
 }
 
@@ -637,7 +635,7 @@ type ControlVlvResponse struct {
             ... },
        contextID     OCTET STRING OPTIONAL }
 */
-func NewControlVlvResponse(p *ber.Packet) (Control, *Error) {
+func NewControlVlvResponse(p *ber.Packet) (Control, error) {
 	c := new(ControlVlvResponse)
 	_, criticality, value := decodeControlTypeAndCrit(p)
 	c.Criticality = criticality
@@ -660,7 +658,7 @@ func NewControlVlvResponse(p *ber.Packet) (Control, *Error) {
 	c.ContentCount = value.Children[1].Value.(uint64)
 
 	errNum := uint8(value.Children[2].Value.(uint64))
-	c.Err = NewError(errNum, errors.New(LDAPResultCodeMap[errNum]))
+	c.Err = NewLDAPError(errNum, "")
 
 	if len(value.Children) == 4 {
 		value.Children[3].Description = "ContextID"
@@ -670,8 +668,8 @@ func NewControlVlvResponse(p *ber.Packet) (Control, *Error) {
 	return c, nil
 }
 
-func (c *ControlVlvResponse) Encode() (p *ber.Packet, err *Error) {
-	return nil, NewError(ErrorEncoding, errors.New("Encode of Control unsupported."))
+func (c *ControlVlvResponse) Encode() (p *ber.Packet, err error) {
+	return nil, NewLDAPError(ErrorEncoding, "Encode of Control unsupported.")
 }
 
 func (c *ControlVlvResponse) GetControlType() string {
@@ -685,7 +683,7 @@ func (c *ControlVlvResponse) String() string {
 		c.Criticality,
 		c.TargetPosition,
 		c.ContentCount,
-		c.Err.ResultCode,
+		c.Err.(*LDAPError).ResultCode,
 		c.ContextID,
 	)
 }

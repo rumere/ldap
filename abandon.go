@@ -5,16 +5,15 @@
 package ldap
 
 import (
-	"errors"
 	"fmt"
 	"github.com/mavricknz/asn1-ber"
 )
 
 // Will return an error. Normally due to closed connection.
-func (l *LDAPConnection) Abandon(abandonMessageID uint64) (error *Error) {
+func (l *LDAPConnection) Abandon(abandonMessageID uint64) error {
 	messageID, ok := l.nextMessageID()
 	if !ok {
-		return NewError(ErrorClosing, errors.New("MessageID channel is closed."))
+		return NewLDAPError(ErrorClosing, "MessageID channel is closed.")
 	}
 
 	encodedAbandon := ber.NewInteger(ber.ClassApplication, ber.TypePrimative, ApplicationAbandonRequest, abandonMessageID, ApplicationMap[ApplicationAbandonRequest])
@@ -35,7 +34,7 @@ func (l *LDAPConnection) Abandon(abandonMessageID uint64) (error *Error) {
 	}
 
 	if channel == nil {
-		return NewError(ErrorNetwork, errors.New("Could not send message"))
+		return NewLDAPError(ErrorNetwork, "Could not send message")
 	}
 
 	defer l.finishMessage(messageID)

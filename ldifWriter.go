@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/base64"
-	"errors"
 	"io"
 	"strings"
 )
@@ -20,7 +19,7 @@ type LDIFWriter struct {
 	recordCount uint64
 }
 
-func NewLDIFWriter(writer io.Writer) (*LDIFWriter, *Error) {
+func NewLDIFWriter(writer io.Writer) (*LDIFWriter, error) {
 	lw := &LDIFWriter{
 		Writer:      bufio.NewWriter(writer),
 		EncAsBinary: IsBinary,
@@ -28,10 +27,10 @@ func NewLDIFWriter(writer io.Writer) (*LDIFWriter, *Error) {
 	return lw, nil
 }
 
-func (lw *LDIFWriter) WriteLDIFRecord(record LDIFRecord) *Error {
+func (lw *LDIFWriter) WriteLDIFRecord(record LDIFRecord) error {
 	// TODO: Controls for all.
 	if record == nil {
-		return NewError(ErrorLDIFWrite, errors.New("nil record"))
+		return NewLDAPError(ErrorLDIFWrite, "nil record")
 	}
 	switch record.RecordType() {
 	case AddRecord:
@@ -55,7 +54,7 @@ func (lw *LDIFWriter) WriteLDIFRecord(record LDIFRecord) *Error {
 			return err
 		}
 		if err := lw.writeMods(rec.Mods); err != nil {
-			return NewError(ErrorLDIFWrite, err)
+			return err
 		}
 
 	case ModDnRecord:
@@ -84,17 +83,17 @@ func (lw *LDIFWriter) WriteLDIFRecord(record LDIFRecord) *Error {
 	}
 	// blank line between records.
 	if _, werr := lw.Writer.WriteString(lineSep); werr != nil {
-		return NewError(ErrorLDIFWrite, werr)
+		return werr
 	}
 
 	lw.Writer.Flush()
 	return nil
 }
 
-func (lw *LDIFWriter) writeDN(DN string) (err *Error) {
+func (lw *LDIFWriter) writeDN(DN string) (err error) {
 	// TODO need canonical DN?
 	if len(DN) == 0 {
-		return NewError(ErrorLDIFWrite, errors.New("DN has zero length."))
+		return NewLDAPError(ErrorLDIFWrite, "DN has zero length.")
 	}
 	if err := lw.writeAttrLine("dn", DN); err != nil {
 		return err
@@ -102,7 +101,7 @@ func (lw *LDIFWriter) writeDN(DN string) (err *Error) {
 	return
 }
 
-func (lw *LDIFWriter) writeEntry(e *Entry) *Error {
+func (lw *LDIFWriter) writeEntry(e *Entry) error {
 	for _, attr := range e.Attributes {
 		for _, val := range attr.Values {
 			if lw.EncAsBinary(attr.Name) || NeedsBase64Encoding(val) {
@@ -119,18 +118,18 @@ func (lw *LDIFWriter) writeEntry(e *Entry) *Error {
 	return nil
 }
 
-func (lw *LDIFWriter) writeEncAttr(attrName, val string) *Error {
+func (lw *LDIFWriter) writeEncAttr(attrName, val string) error {
 	_, werr := lw.Writer.WriteString(attrName + ldifSep + ldifSep + " ")
 	if werr != nil {
-		return NewError(ErrorLDIFWrite, werr)
+		return werr
 	}
 	_, werr = lw.Writer.WriteString(toBase64(val))
 	if werr != nil {
-		return NewError(ErrorLDIFWrite, werr)
+		return werr
 	}
 	_, werr = lw.Writer.WriteString(lineSep)
 	if werr != nil {
-		return NewError(ErrorLDIFWrite, werr)
+		return werr
 	}
 	return nil
 }
@@ -163,7 +162,7 @@ func NeedsBase64Encoding(val string) bool {
 	return false
 }
 
-func (lw *LDIFWriter) writeMods(mods []Mod) *Error {
+func (lw *LDIFWriter) writeMods(mods []Mod) error {
 	for _, mod := range mods {
 		if err := lw.writeAttrLine(ModMap[mod.ModOperation], mod.Modification.Name); err != nil {
 			return err
@@ -175,32 +174,32 @@ func (lw *LDIFWriter) writeMods(mods []Mod) *Error {
 		}
 		_, werr := lw.Writer.WriteString("-\n")
 		if werr != nil {
-			return NewError(ErrorLDIFWrite, werr)
+			return werr
 		}
 	}
 	return nil
 }
 
-func (lw *LDIFWriter) writeAttrLine(attrName, value string) *Error {
+func (lw *LDIFWriter) writeAttrLine(attrName, value string) error {
 	_, werr := lw.Writer.WriteString(attrName)
 	if werr != nil {
-		return NewError(ErrorLDIFWrite, werr)
+		return werr
 	}
 	_, werr = lw.Writer.WriteString(ldifSep)
 	if werr != nil {
-		return NewError(ErrorLDIFWrite, werr)
+		return werr
 	}
 	_, werr = lw.Writer.WriteString(" ")
 	if werr != nil {
-		return NewError(ErrorLDIFWrite, werr)
+		return werr
 	}
 	_, werr = lw.Writer.WriteString(value)
 	if werr != nil {
-		return NewError(ErrorLDIFWrite, werr)
+		return werr
 	}
 	_, werr = lw.Writer.WriteString(lineSep)
 	if werr != nil {
-		return NewError(ErrorLDIFWrite, werr)
+		return werr
 	}
 	return nil
 }
