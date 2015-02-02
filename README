@@ -1,5 +1,7 @@
 Basic LDAP v3 functionality for the GO programming language.  
 
+--Edit
+
 Most features are used in the test files. ldaplocal_test.go tests
 most new features.
 
